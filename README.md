@@ -1,5 +1,13 @@
 # Reservas de zonas comunes, donde dos personas no pueden ocupar el mismo hueco
 
+[![CI](https://github.com/erickcolin2005/reservas-zonas-comunes/actions/workflows/ci.yml/badge.svg)](https://github.com/erickcolin2005/reservas-zonas-comunes/actions/workflows/ci.yml)
+
+La insignia enlaza a la ejecución real. Dos trabajos: la suite completa contra un
+motor local, y **uno que rompe la defensa a propósito y exige que el build
+caiga**. Si está en verde, lo que este documento afirma se midió en una máquina
+que no es la mía — que es donde el proyecto anterior encontró dos fallos que en
+local no se veían.
+
 Un sistema de reserva de zonas comunes de un conjunto residencial —salón social,
 BBQ, cancha— construido alrededor de una sola pregunta incómoda: **¿qué hace el
 sistema cuando dos peticiones llegan a la vez por el mismo espacio, el mismo día
