@@ -1,0 +1,62 @@
+Casos K contra el sustituto local — ultima ejecucion del CI
+T0 derivado: 2026-09-07T09:00:00-05:00
+
+== K-01 — 50 unidades distintas por la misma franja de E-CAN ===
+
+  lanzadas .......................... 50
+  competidoras efectivas ............ 50
+  confirmadas ....................... 1
+
+  reparto por cubo de desenlace:
+    RR-11              49
+    confirmada         1
+
+  simultaneidad observada:
+    S-1 max en vuelo a la vez ....... 50 de 50
+    S-2 max ventanas solapadas ...... 50
+    S-3 rechazos RR-11 .............. 49
+    dispersion de la barrera ........ 64.04 ms
+
+  I-1 CORRECCION (C1): OK
+  I-2 VIVACIDAD: OK
+  I-3 VALIDEZ DE LA MEDICION: OK
+
+== K-02 — solapamiento parcial 10-14 contra 12-16 en E-SAL =====
+
+  lanzadas .......................... 2
+  competidoras efectivas ............ 2
+  confirmadas ....................... 1
+
+  reparto por cubo de desenlace:
+    RR-11              1
+    confirmada         1
+
+  simultaneidad observada:
+    S-1 max en vuelo a la vez ....... 2 de 2
+    S-2 max ventanas solapadas ...... 2
+    S-3 rechazos RR-11 .............. 1
+    dispersion de la barrera ........ 1.09 ms
+
+  I-1 CORRECCION (C1): OK
+  I-2 VIVACIDAD: OK
+  I-3 VALIDEZ DE LA MEDICION: OK
+
+== K-03 — 50 simultaneas repartidas entre 5 franjas de E-CAN ===
+
+  lanzadas .......................... 50
+  competidoras efectivas ............ 50
+  confirmadas ....................... 5
+
+  reparto por cubo de desenlace:
+    RR-11              45
+    confirmada         5
+
+  simultaneidad observada:
+    S-1 max en vuelo a la vez ....... 50 de 50
+    S-2 max ventanas solapadas ...... 50
+    S-3 rechazos RR-11 .............. 45
+    dispersion de la barrera ........ 55.63 ms
+
+  I-1 CORRECCION (C1): OK
+  I-2 VIVACIDAD: OK
+  I-3 VALIDEZ DE LA MEDICION: OK

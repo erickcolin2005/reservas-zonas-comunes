@@ -1,0 +1,97 @@
+# CI — RNF-14: las pruebas corren en cada push, no solo en la maquina de quien
+# desarrolla. D-D se comprueba mirando el CI, no el fichero de prueba.
+#
+# EL CI NO TOCA EL MOTOR REAL. NUNCA. (ADR-08, CE-4)
+# Todo corre contra el sustituto local en contenedor. No hay credenciales de
+# AWS en este flujo, no hay secretos del repositorio, y no puede haberlos:
+# un CI contra AWS haria el consumo proporcional al ritmo de desarrollo, y
+# agotar los creditos cierra la cuenta.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pruebas:
+    name: Pruebas contra el sustituto local
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      # No se usa un contenedor de servicio a proposito: el arranque del
+      # sustituto lo hace el propio arbol de pruebas, que es el MISMO camino que
+      # recorrera un extrano en su maquina limpia (T7a). Si ese camino se rompe,
+      # tiene que romperse aqui y no en las manos de quien lea el repositorio.
+      - name: Comprobar que hay docker para el sustituto local
+        run: docker --version
+
+      # Practica heredada n.o 4: el CI encuentra lo que la maquina de desarrollo
+      # esconde. En el proyecto anterior, una importacion que solo funcionaba con
+      # `python -m pytest` paso desapercibida hasta el CI. Se comprueban las dos
+      # invocaciones, que no cargan los modulos igual.
+      - name: Recoleccion con las dos invocaciones de pytest
+        run: |
+          pytest --collect-only -q
+          python -m pytest --collect-only -q
+
+      - name: V-2a — capacidades del sustituto local
+        run: |
+          docker run -d --name v2a -p 8000:8000 amazon/dynamodb-local:latest \
+            -jar DynamoDBLocal.jar -inMemory -sharedDb
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null http://localhost:8000 && break || sleep 1
+          done
+          RESERVAS_ENDPOINT=http://localhost:8000 python -m herramientas.v2a_sonda
+          docker rm -f v2a
+
+      - name: Suite completa
+        run: python -m pytest -v
+
+      - name: H2 — la prueba sabe ponerse en rojo
+        run: |
+          docker run -d --name h2 -p 8000:8000 amazon/dynamodb-local:latest \
+            -jar DynamoDBLocal.jar -inMemory -sharedDb
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null http://localhost:8000 && break || sleep 1
+          done
+          RESERVAS_ENDPOINT=http://localhost:8000 python -m herramientas.sensibilidad \
+            --evidencia evidencia/h2-defensa-revertida.txt
+          docker rm -f h2
+
+      # La evidencia se sube siempre, tambien cuando algo falla: una tabla que
+      # solo publica aciertos no es un resultado, es un folleto.
+      - name: Publicar la evidencia de la corrida
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencia
+          path: evidencia/
+          if-no-files-found: warn
+
+      - name: Comprobar que no se cuelan credenciales de AWS
+        if: always()
+        run: |
+          if env | grep -Ei '^AWS_(ACCESS|SECRET|SESSION)'; then
+            echo "Hay credenciales de AWS en el entorno del CI. El CI no toca"
+            echo "el motor real (ADR-08) y no debe poder hacerlo."
+            exit 1
+          fi
+          echo "Sin credenciales de AWS en el entorno. Correcto."

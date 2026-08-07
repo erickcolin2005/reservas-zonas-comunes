@@ -1,0 +1,88 @@
+H2 — al revertir la defensa, la prueba se pone en ROJO
+======================================================================
+
+Criterio invertido: una mutacion en ROJO es el resultado CORRECTO.
+Si alguna mutacion sale en verde, la prueba no vigila nada.
+
+Sustituto local: http://localhost:8000
+T0 derivado: 2026-09-07T09:00:00-05:00
+
+----------------------------------------------------------------------
+MUTACION M-a · sin escritura condicional sobre el hueco
+  se apaga ......... la condicion attribute_not_exists en los items de franja
+  deberia pasar .... varias confirmadas sobre la misma franja: I-1 violado
+  caso ............. K-01
+  RESULTADO ........ ROJO (correcto)
+
+== K-01 — 50 unidades distintas por la misma franja de E-CAN ===
+
+  lanzadas .......................... 50
+  competidoras efectivas ............ 50
+  confirmadas ....................... 50
+
+  reparto por cubo de desenlace:
+    confirmada         50
+
+  simultaneidad observada:
+    S-1 max en vuelo a la vez ....... 50 de 50
+    S-2 max ventanas solapadas ...... 50
+    S-3 rechazos RR-11 .............. 0   <-- SIN evidencia directa de carrera
+    dispersion de la barrera ........ 52.12 ms
+
+  I-1 CORRECCION (C1): VIOLADO -> BUILD EN ROJO
+      - franja 2026-09-11 10:00: 50 confirmadas (maximo admitido 1) — ESTO ES UNA DOBLE RESERVA
+  I-2 VIVACIDAD: VIOLADO -> BUILD EN ROJO
+      - confirmadas totales = 50, y el caso declara 1. Un sistema que rechaza de mas satisface la correccion y no sirve para nada
+  I-3 VALIDEZ DE LA MEDICION: OK
+  avisos:
+      - RR-11 = 0: la corrida no produjo evidencia directa de carrera. Es aviso de medicion (RF-14), no fallo del sistema
+
+----------------------------------------------------------------------
+MUTACION M-b · canonizacion de la clave en UTC
+  se apaga ......... la regla 1 de §4.3: la clave en hora local
+  deberia pasar .... dos confirmadas sobre la misma franja SIN violar ninguna regla y con la escritura condicional intacta
+  caso ............. K-01
+  RESULTADO ........ ROJO (correcto)
+
+== K-01 — 50 unidades distintas por la misma franja de E-CAN ===
+
+  lanzadas .......................... 50
+  competidoras efectivas ............ 50
+  confirmadas ....................... 2
+
+  reparto por cubo de desenlace:
+    RR-11              48
+    confirmada         2
+
+  simultaneidad observada:
+    S-1 max en vuelo a la vez ....... 50 de 50
+    S-2 max ventanas solapadas ...... 50
+    S-3 rechazos RR-11 .............. 48
+    dispersion de la barrera ........ 54.61 ms
+
+  I-1 CORRECCION (C1): VIOLADO -> BUILD EN ROJO
+      - franja 2026-09-11 10:00: 2 confirmadas (maximo admitido 1) — ESTO ES UNA DOBLE RESERVA
+  I-2 VIVACIDAD: VIOLADO -> BUILD EN ROJO
+      - confirmadas totales = 2, y el caso declara 1. Un sistema que rechaza de mas satisface la correccion y no sirve para nada
+  I-3 VALIDEZ DE LA MEDICION: OK
+
+----------------------------------------------------------------------
+Mutaciones que NO se pueden ejercitar contra el sustituto local:
+
+  M-c · marca pegajosa de ADR-04
+      El sustituto local NUNCA devuelve TransactionConflict (V-2a,
+      hallazgo V2a-9): serializa por construccion. Sin conflicto no hay
+      reintento, y sin reintento la marca pegajosa no llega a usarse.
+      **Apagarla aqui no cambiaria ningun resultado, asi que una mutacion
+      local saldria en verde y no probaria nada.** Su primera prueba real
+      es I-3, contra el motor real. Se declara en vez de fabricar una
+      mutacion que pase.
+
+  M-d · SYS-CAPACIDAD
+      El sustituto local ignora la capacidad aprovisionada (V-2a, hallazgo
+      V2a-10): 200 escrituras seguidas sin un solo estrangulamiento sobre
+      25 WCU. El cubo SYS-CAPACIDAD existe en el codigo y no se puede
+      ejercitar en local. I-3.
+
+======================================================================
+VEREDICTO H2: CUMPLIDO. Todas las mutaciones pusieron la prueba en rojo. El verde de los casos K sabe ponerse rojo.

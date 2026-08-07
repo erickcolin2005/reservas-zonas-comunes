@@ -1,0 +1,50 @@
+V-2a — capacidades del sustituto local
+======================================================================
+
+  [OK] V2a-1  ¿La escritura condicional impide la segunda escritura?
+       -> SI. Codigo de error: ConditionalCheckFailedException
+          Es la garantia G-b: a lo sumo una escritura condicional aplica sobre la misma clave.
+
+  [OK] V2a-2  ¿Devuelve el item ganador cuando la condicion falla (ALL_OLD)?
+       -> SI: {'SK': {'S': 'X'}, 'duena': {'S': 'primera'}, 'PK': {'S': 'cond'}}
+          Si lo devuelve, RR-09 se distingue de RR-11 sin lectura extra y la idempotencia de ADR-25 sale gratis. Si no, hace falta un GetItem en el camino perdedor. **El diseno funciona con las dos respuestas.**
+
+  [OK] V2a-3  ¿Implementa TransactWriteItems?
+       -> SI. Transaccion de 2 items aceptada.
+
+  [OK] V2a-4  ¿La transaccion es todo-o-nada ante una condicion incumplida?
+       -> SI. TransactionCanceledException; el item que SI podia escribirse NO quedo escrito (bien)
+          CancellationReasons = [{'Code': 'None'}, {'Item': {'SK': {'S': 'A'}, 'PK': {'S': 'tx'}}, 'Code': 'ConditionalCheckFailed', 'Message': 'The conditional request failed'}]
+
+  [OK] V2a-5  ¿Las razones de cancelacion llegan una por item y en orden?
+       -> SI. Codigos observados: ['None', 'ConditionalCheckFailed']
+          Es lo unico que permite saber CUAL condicion fallo y, con ello, atribuir RR-07 / RR-08 / RR-11 en vez de decir 'fallo algo'.
+
+  [OK] V2a-6  ¿La razon de cancelacion trae el item ganador?
+       -> SI: {'SK': {'S': 'A'}, 'PK': {'S': 'tx'}}
+          Con el, RR-09 vs RR-11 y la idempotencia de ADR-25 no cuestan una lectura extra. El diseno funciona con las dos respuestas.
+
+  [OK] V2a-7  ¿Cuantos items admite una transaccion?
+       -> aceptados [14, 25, 100] · rechazados ['101:ValidationException']
+          El maximo del modelo es 14 items (E-SAL con 6 franjas). El diseno queda por debajo del limite a proposito, para no depender de cual sea el valor exacto.
+
+  [OK] V2a-8  ¿Un contador con condicion 'contador < tope' corta en el tope?
+       -> 3 incrementos aceptados de 5 (tope 3). Ultimo error: ConditionalCheckFailedException
+          Es la segunda carrera: dos solicitudes de la misma unidad en franjas distintas no comparten clave de franja, pero si comparten esta (K-05). Y es la forma del contador de intentos de SEC-1 (I-6).
+
+  [??] V2a-9  ¿Produce TransactionConflict bajo transacciones concurrentes?
+       -> codigos observados: ['OK']
+          N-f. Si el sustituto NUNCA produce conflicto —porque serializa por construccion—, el reintento de ADR-04 queda sin ejercitar en local y su primera prueba real es I-3. Se declara; no se disimula.
+
+  [??] V2a-10  ¿Respeta la capacidad aprovisionada (25 WCU) y estrangula?
+       -> NO. 200 escrituras seguidas sin un solo estrangulamiento, muy por encima de 25 WCU. El sustituto ignora la capacidad aprovisionada.
+          Si no estrangula, `SYS-CAPACIDAD` no se puede ejercitar en local y su primera aparicion sera contra el motor real. Es una clase de fallo que el sustituto esconde por diseno.
+
+  [OK] V2a-11  ¿Admite activar la expiracion por atributo (ttl)?
+       -> SI, se puede activar. Estado: {'TimeToLiveStatus': 'ENABLED', 'AttributeName': 'ttl'}
+          Admitir la llamada no es lo mismo que borrar. El momento del borrado es [NV] y es de V-8, no de aqui. Ninguna prueba de I-1 depende de que el sustituto borre nada.
+
+======================================================================
+VEREDICTO V-2a: POSITIVA — el sustituto implementa escritura condicional y transacciones. El CI puede correr los casos K.
+
+Recordatorio: esto NO compara con el motor real (eso es V-2b, I-3). Una confirmacion en local no implica una confirmacion en AWS.

@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Entorno y secretos — RNF-07: ningun secreto vive en este repositorio
+.env
+*.pem
+*.key
+credenciales*
+.aws/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Sustituto local: datos que deja DynamoDB Local si se ejecuta sin -inMemory
+*.db
+shared-local-instance.db
+dynamodb-local/
+
+# Salidas de ejecucion que NO son evidencia versionada.
+# La evidencia que si se versiona vive en evidencia/ y se anade a proposito.
+salidas/

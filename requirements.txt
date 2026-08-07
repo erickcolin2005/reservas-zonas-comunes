@@ -1,0 +1,16 @@
+# Dependencias del incremento I-1.
+#
+# La lista es corta a proposito: el nucleo de reglas no tiene ninguna
+# dependencia de infraestructura (ADR-07) y las dos que hay solo las usan el
+# adaptador de persistencia y el arranque de las pruebas.
+#
+# Ninguna de estas dependencias necesita una cuenta de AWS. El motor contra el
+# que se prueba es el sustituto local en contenedor (ADR-08).
+#
+# Las versiones van fijadas porque las pruebas de V-2a afirman codigos de error
+# concretos del cliente. Si el cliente cambia el nombre de una excepcion, la
+# prueba tiene que enterarse rompiendose, no adaptandose sola.
+
+boto3==1.43.66
+botocore==1.43.66
+pytest==9.1.1
