@@ -1,0 +1,316 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# M0 — El guardarrail de costos. La PRIMERA pila del proyecto.
+#
+# Se despliega ANTES de que exista cualquier otro recurso. No es una buena
+# practica: es la condicion D-P4-01, y el incremento I-2 no esta cerrado hasta
+# que un intento de superar el umbral quede efectivamente DENEGADO, no solo
+# notificado.
+#
+# POR QUE ESTO ES CODIGO Y NO UNA SESION DE CONSOLA (P-05): el hito final del
+# proyecto es "el IaC levanta el sistema entero en una cuenta limpia con un
+# comando". Si el guardarrail se monta a mano, el primer recurso del proyecto es
+# justo el que no se puede reconstruir, y la promesa se cae en su propia base.
+#
+# ---------------------------------------------------------------------------
+# LO QUE ESTA PILA NO HACE, Y HAY QUE SABERLO ANTES DE CONFIAR EN ELLA
+# ---------------------------------------------------------------------------
+# La accion presupuestaria aplica una politica de DENEGACION IAM al usuario
+# dedicado. Eso impide que se CREEN mas recursos. NO detiene el trafico del
+# sistema ya desplegado: API Gateway sigue recibiendo y Lambda sigue
+# ejecutandose, porque esas invocaciones no pasan por el usuario de IAM.
+#
+# Es decir: este freno actua sobre la persona, no sobre el sistema. Lo unico
+# que acota el consumo por trafico son el estrangulamiento del borde y el
+# conjunto cerrado de 50 identidades (arquitectura §6.2). Confundir las dos
+# cosas seria creerse protegido de algo que sigue abierto.
+
+Description: >-
+  M0 - Guardarrail de costos de P4. Dos presupuestos con trabajos distintos y
+  una accion de denegacion automatica. Se despliega antes que cualquier otro
+  recurso del proyecto.
+
+Parameters:
+
+  UsuarioDedicado:
+    Type: String
+    Description: >-
+      Nombre del usuario de IAM al que se le aplica la denegacion al cruzar el
+      umbral. NUNCA la raiz (SEC-8). Debe existir antes de desplegar esta pila.
+    MinLength: 1
+
+  CorreoAlertas:
+    Type: String
+    Description: >-
+      Destino de las alertas. Conviene que NO sea el correo de la cuenta raiz,
+      para que una alerta no obligue a iniciar sesion como raiz.
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+
+  LimiteCreditosUSD:
+    Type: Number
+    Default: 50
+    MinValue: 1
+    Description: >-
+      Umbral de consumo BRUTO de creditos, en USD. NO es un presupuesto: es una
+      alarma de humo. El consumo esperado a trafico de portafolio son centavos,
+      asi que cruzar 50 USD no significa "se acabo el margen", significa "algo
+      esta consumiendo tres ordenes de magnitud mas de lo previsto" - que es
+      exactamente CE-4 materializandose. El valor es una decision, no una
+      medicion: corregible.
+
+Resources:
+
+  # -------------------------------------------------------------------------
+  # 1. La politica de denegacion
+  # -------------------------------------------------------------------------
+  # Deniega CREAR y ESCALAR. No deniega leer, ni facturacion, ni IAM.
+  #
+  # Por que NO se deniega iam:*  -> si se denegara, quitar la propia denegacion
+  # exigiria iniciar sesion como raiz. Se deja la via de recuperacion abierta a
+  # proposito: esto es un freno contra el accidente, no contra un adversario.
+  # Un freno del que no se puede salir sin la raiz acaba desactivado antes de
+  # llegar a servir para algo.
+  #
+  # Por que NO se deniega la lectura de facturacion -> el momento en que esta
+  # politica se aplica es exactamente el momento en que hay que poder mirar
+  # cuanto se consumio y por que.
+  PoliticaDenegacion:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${AWS::StackName}-denegar-crecimiento"
+      Description: >-
+        Aplicada automaticamente por AWS Budgets al cruzar el umbral de consumo.
+        Impide crear o escalar recursos; deja intactas lectura, facturacion y
+        recuperacion via IAM.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenegarCrecimientoDeInfraestructura
+            Effect: Deny
+            Action:
+              # Los cuatro servicios del alcance
+              - "dynamodb:CreateTable"
+              - "dynamodb:UpdateTable"
+              - "dynamodb:CreateGlobalTable"
+              - "dynamodb:RestoreTableFromBackup"
+              - "dynamodb:RestoreTableToPointInTime"
+              - "lambda:CreateFunction"
+              - "lambda:UpdateFunctionConfiguration"
+              - "lambda:PutFunctionConcurrency"
+              - "lambda:PutProvisionedConcurrencyConfig"
+              - "apigateway:POST"
+              - "apigateway:PUT"
+              - "s3:CreateBucket"
+              # Ojo: la accion se llama PutReplicationConfiguration, NO
+              # PutBucketReplication. Escrita mal, el Deny no deniega nada:
+              # una politica que prohibe una accion inexistente pasa validacion
+              # y no protege. Lo cazo cfn-lint, no una lectura.
+              - "s3:PutReplicationConfiguration"
+              # La via por la que se crea todo lo demas
+              - "cloudformation:CreateStack"
+              - "cloudformation:UpdateStack"
+              - "cloudformation:CreateChangeSet"
+              - "cloudformation:ExecuteChangeSet"
+              # Familias enteras que este proyecto no usa y que son las que
+              # queman credito de golpe si alguien las toca por curiosidad
+              - "ec2:RunInstances"
+              - "rds:CreateDBInstance"
+              - "rds:CreateDBCluster"
+              - "elasticache:CreateCacheCluster"
+              - "redshift:CreateCluster"
+              - "sagemaker:CreateNotebookInstance"
+              - "sagemaker:CreateEndpoint"
+            Resource: "*"
+
+  # -------------------------------------------------------------------------
+  # 2. El rol que AWS Budgets asume para aplicarla
+  # -------------------------------------------------------------------------
+  # La politica de confianza lleva las condiciones aws:SourceArn y
+  # aws:SourceAccount que la propia documentacion de AWS recomienda contra el
+  # "confused deputy". Sin ellas el rol seria asumible en un contexto mas ancho
+  # del necesario.
+  RolAccionPresupuesto:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-rol-accion-budgets"
+      Description: Rol de servicio que AWS Budgets asume para aplicar la denegacion.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: budgets.amazonaws.com
+            Action: "sts:AssumeRole"
+            Condition:
+              ArnLike:
+                "aws:SourceArn": !Sub "arn:aws:budgets::${AWS::AccountId}:budget/*"
+              StringEquals:
+                "aws:SourceAccount": !Ref "AWS::AccountId"
+      Policies:
+        - PolicyName: aplicar-politica-iam
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Subconjunto EXACTO del ejemplo oficial "Allow AWS Budgets to
+              # apply IAM policies and SCPs", recortado a lo que este proyecto
+              # usa: solo usuarios. Se omiten Group, Role y organizations:*
+              # a proposito - organizations no se toca ni de lejos, porque
+              # activarlo convierte la cuenta en facturable (CE-1, grupo B).
+              - Effect: Allow
+                Action:
+                  - "iam:AttachUserPolicy"
+                  - "iam:DetachUserPolicy"
+                Resource: "*"
+
+  # -------------------------------------------------------------------------
+  # 3. Presupuesto A - "gasto facturable cero"
+  # -------------------------------------------------------------------------
+  # Trabajo: detectar que la cuenta dejo de ser gratuita.
+  #
+  # IncludeCredit: true  -> mide el costo NETO, despues de aplicar creditos.
+  # En el Plan Gratuito eso tiene que ser 0 SIEMPRE, por contrato. Si algun dia
+  # deja de serlo, la cuenta se convirtio en facturable - que es el riesgo RE-1,
+  # el que la lista CE-1 solo puede mitigar pidiendo que nadie pulse la casilla.
+  #
+  # LIMITE HONESTO: mientras queden creditos, incluso una cuenta ya convertida a
+  # Plan de Pago mostraria 0 aqui. Este tripwire detecta la conversion TARDE,
+  # no en el momento. Es mejor que nada y peor que un control. Se declara.
+  PresupuestoFacturableCero:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "${AWS::StackName}-facturable-cero"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: 0.01
+          Unit: USD
+        CostTypes:
+          IncludeCredit: true      # NETO, a proposito. Ver comentario de arriba.
+          IncludeRefund: true
+          IncludeDiscount: true
+          IncludeTax: true
+          IncludeSubscription: true
+          IncludeUpfront: true
+          IncludeRecurring: true
+          IncludeOtherSubscription: true
+          IncludeSupport: true
+          UseBlended: false
+          UseAmortized: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref CorreoAlertas
+
+  # -------------------------------------------------------------------------
+  # 4. Presupuesto B - "consumo de creditos"
+  # -------------------------------------------------------------------------
+  # Trabajo: ver lo que el presupuesto A no puede ver por construccion.
+  #
+  # IncludeCredit: false + UseBlended: false -> costo BRUTO sin aplicar
+  # creditos. Es la cifra que informa la decision.
+  #
+  # ESTA ES LA LINEA QUE JUSTIFICA D-P4-13. Con IncludeCredit: true este
+  # presupuesto marcaria ~0 mientras los creditos se vacian, porque el credito
+  # absorbe el cargo, y el guardarrail estaria verde hasta el dia en que la
+  # cuenta se cierre. Seria medir la cosa parecida en vez de la cosa - con el
+  # agravante de que la cosa parecida SE VE SANA.
+  PresupuestoConsumoCreditos:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "${AWS::StackName}-consumo-creditos"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref LimiteCreditosUSD
+          Unit: USD
+        CostTypes:
+          IncludeCredit: false     # BRUTO. La cifra que significa algo.
+          IncludeRefund: false
+          IncludeDiscount: false
+          IncludeTax: true
+          IncludeSubscription: true
+          IncludeUpfront: true
+          IncludeRecurring: true
+          IncludeOtherSubscription: true
+          IncludeSupport: true
+          UseBlended: false
+          UseAmortized: false
+      NotificationsWithSubscribers:
+        # 85% -> avisa. D-P4-01 punto 2.
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 85
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref CorreoAlertas
+        # 100% -> avisa Y frena (la accion de abajo).
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref CorreoAlertas
+
+  # -------------------------------------------------------------------------
+  # 5. La accion - lo que convierte "alerta" en "tope"
+  # -------------------------------------------------------------------------
+  # ApprovalModel: AUTOMATIC es la otra mitad de D-P4-13. La API admite MANUAL,
+  # y con MANUAL el freno no frena: espera a que alguien apruebe. Un freno que
+  # pide permiso es un correo con pasos extra.
+  #
+  # ActionType: APPLY_IAM_POLICY es el unico viable aqui, y no por preferencia:
+  #   - APPLY_SCP_POLICY exige AWS Organizations, que esta PROHIBIDO por CE-1
+  #     (grupo B, fila 1): activarlo convierte la cuenta en facturable.
+  #   - RUN_SSM_DOCUMENTS actua sobre EC2/RDS, que este proyecto no tiene.
+  AccionDenegacion:
+    Type: AWS::Budgets::BudgetsAction
+    DependsOn: PresupuestoConsumoCreditos
+    Properties:
+      BudgetName: !Sub "${AWS::StackName}-consumo-creditos"
+      NotificationType: ACTUAL
+      ActionType: APPLY_IAM_POLICY
+      ApprovalModel: AUTOMATIC
+      ExecutionRoleArn: !GetAtt RolAccionPresupuesto.Arn
+      ActionThreshold:
+        Type: PERCENTAGE
+        Value: 100
+      Definition:
+        IamActionDefinition:
+          PolicyArn: !Ref PoliticaDenegacion
+          Users:
+            - !Ref UsuarioDedicado
+      Subscribers:
+        # OJO: en BudgetsAction el campo se llama "Type"; en el Subscriber de
+        # AWS::Budgets::Budget se llama "SubscriptionType". Es una inconsistencia
+        # real de CloudFormation, no una errata de este fichero.
+        - Type: EMAIL
+          Address: !Ref CorreoAlertas
+
+Outputs:
+
+  ArnPoliticaDenegacion:
+    Description: >-
+      ARN de la politica de denegacion. Se necesita para la prueba H0-a, que la
+      adjunta a mano y comprueba que efectivamente deniega.
+    Value: !Ref PoliticaDenegacion
+
+  NombrePresupuestoCreditos:
+    Description: Presupuesto que vigila el consumo bruto de creditos.
+    Value: !Sub "${AWS::StackName}-consumo-creditos"
+
+  RecordatorioCE2:
+    Description: >-
+      Al desplegar esta pila arranca el reloj de 6 meses. Anotar en el dossier
+      la fecha de registro y la de cierre previsto (CE-2).
+    Value: "CE-2: anotar fecha de registro y de cierre previsto en el dossier."
