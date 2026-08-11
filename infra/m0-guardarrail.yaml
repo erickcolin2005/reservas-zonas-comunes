@@ -46,16 +46,19 @@ Parameters:
       para que una alerta no obligue a iniciar sesion como raiz.
     AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
 
-  LimiteCreditosUSD:
+  LimiteGastoUSD:
     Type: Number
-    Default: 50
+    Default: 5
     MinValue: 1
     Description: >-
-      Umbral de consumo BRUTO de creditos, en USD. NO es un presupuesto: es una
-      alarma de humo. El consumo esperado a trafico de portafolio son centavos,
-      asi que cruzar 50 USD no significa "se acabo el margen", significa "algo
-      esta consumiendo tres ordenes de magnitud mas de lo previsto" - que es
-      exactamente CE-4 materializandose. El valor es una decision, no una
+      Umbral de gasto BRUTO en USD. NO es un presupuesto: es una alarma de humo.
+      El gasto esperado de este proyecto son centavos o cero -Lambda y DynamoDB
+      son Always Free, y API Gateway y S3 tienen su año gratis activo en Plan de
+      Pago-, asi que cruzar 5 USD no significa "se acabo el margen": significa
+      que algo consume dos ordenes de magnitud mas de lo previsto.
+      Recalibrado de 50 a 5 el 2026-08-11: 50 se eligio como fraccion de 200 USD
+      de creditos que amortiguaban. En Plan de Pago no hay tal amortiguador y la
+      cifra es dinero real, asi que el umbral baja. Es una decision, no una
       medicion: corregible.
 
 Resources:
@@ -165,16 +168,22 @@ Resources:
   # -------------------------------------------------------------------------
   # 3. Presupuesto A - "gasto facturable cero"
   # -------------------------------------------------------------------------
-  # Trabajo: detectar que la cuenta dejo de ser gratuita.
+  # Trabajo: avisar del PRIMER cargo real. Es la alarma principal.
   #
-  # IncludeCredit: true  -> mide el costo NETO, despues de aplicar creditos.
-  # En el Plan Gratuito eso tiene que ser 0 SIEMPRE, por contrato. Si algun dia
-  # deja de serlo, la cuenta se convirtio en facturable - que es el riesgo RE-1,
-  # el que la lista CE-1 solo puede mitigar pidiendo que nadie pulse la casilla.
+  # REESCRITO EL 2026-08-11. La version anterior decia que este presupuesto
+  # detectaba "que la cuenta dejo de ser gratuita", porque se escribio
+  # suponiendo Plan Gratuito. La cuenta resulto estar en PLAN DE PAGO
+  # -verificado con freetier:GetAccountPlanState- y eso invierte su papel:
   #
-  # LIMITE HONESTO: mientras queden creditos, incluso una cuenta ya convertida a
-  # Plan de Pago mostraria 0 aqui. Este tripwire detecta la conversion TARDE,
-  # no en el momento. Es mejor que nada y peor que un control. Se declara.
+  #   Antes: tripwire de un evento que no deberia ocurrir nunca.
+  #   Ahora: la alarma de que estas pagando dinero real.
+  #
+  # IncludeCredit: true -> costo NETO, despues de creditos. Es exactamente lo
+  # que AWS te va a cobrar. Con limite de 0,01 USD, cualquier cargo que
+  # sobreviva al free tier y a los creditos dispara el aviso.
+  #
+  # No lleva accion de denegacion a proposito: un cargo de un centimo no
+  # justifica bloquear la cuenta. Avisa. Frenar es trabajo del presupuesto B.
   PresupuestoFacturableCero:
     Type: AWS::Budgets::Budget
     Properties:
@@ -208,27 +217,32 @@ Resources:
               Address: !Ref CorreoAlertas
 
   # -------------------------------------------------------------------------
-  # 4. Presupuesto B - "consumo de creditos"
+  # 4. Presupuesto B - "gasto bruto" (el que frena)
   # -------------------------------------------------------------------------
-  # Trabajo: ver lo que el presupuesto A no puede ver por construccion.
+  # Trabajo: ver lo que el presupuesto A no puede ver, y frenar.
   #
-  # IncludeCredit: false + UseBlended: false -> costo BRUTO sin aplicar
-  # creditos. Es la cifra que informa la decision.
+  # IncludeCredit: false + UseBlended: false -> costo BRUTO, sin aplicar
+  # creditos ni descuentos. Es la cifra que informa la decision.
   #
-  # ESTA ES LA LINEA QUE JUSTIFICA D-P4-13. Con IncludeCredit: true este
-  # presupuesto marcaria ~0 mientras los creditos se vacian, porque el credito
-  # absorbe el cargo, y el guardarrail estaria verde hasta el dia en que la
-  # cuenta se cierre. Seria medir la cosa parecida en vez de la cosa - con el
-  # agravante de que la cosa parecida SE VE SANA.
+  # POR QUE SIGUE HACIENDO FALTA AUNQUE LA CUENTA SEA DE PAGO: si quedan
+  # creditos, el presupuesto A marca ~0 mientras se vacian, porque el credito
+  # absorbe el cargo. Ese es D-P4-13, y no depende del plan: depende de que
+  # haya creditos. Medir el neto cuando lo que se agota es el bruto es medir la
+  # cosa parecida en vez de la cosa - con el agravante de que la cosa parecida
+  # SE VE SANA.
+  #
+  # Si resultara que la cuenta no tiene ningun credito, bruto y neto coinciden
+  # y este presupuesto se vuelve redundante con A en su lectura, pero NO en su
+  # funcion: es el unico que lleva la accion de denegacion.
   PresupuestoConsumoCreditos:
     Type: AWS::Budgets::Budget
     Properties:
       Budget:
-        BudgetName: !Sub "${AWS::StackName}-consumo-creditos"
+        BudgetName: !Sub "${AWS::StackName}-gasto-bruto"
         BudgetType: COST
         TimeUnit: MONTHLY
         BudgetLimit:
-          Amount: !Ref LimiteCreditosUSD
+          Amount: !Ref LimiteGastoUSD
           Unit: USD
         CostTypes:
           IncludeCredit: false     # BRUTO. La cifra que significa algo.
@@ -277,7 +291,7 @@ Resources:
     Type: AWS::Budgets::BudgetsAction
     DependsOn: PresupuestoConsumoCreditos
     Properties:
-      BudgetName: !Sub "${AWS::StackName}-consumo-creditos"
+      BudgetName: !Sub "${AWS::StackName}-gasto-bruto"
       NotificationType: ACTUAL
       ActionType: APPLY_IAM_POLICY
       ApprovalModel: AUTOMATIC
@@ -307,7 +321,7 @@ Outputs:
 
   NombrePresupuestoCreditos:
     Description: Presupuesto que vigila el consumo bruto de creditos.
-    Value: !Sub "${AWS::StackName}-consumo-creditos"
+    Value: !Sub "${AWS::StackName}-gasto-bruto"
 
   RecordatorioCE2:
     Description: >-

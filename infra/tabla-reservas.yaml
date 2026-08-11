@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# I-3 — La tabla, en el motor real.
+#
+# Segunda pila del proyecto. La primera fue el guardarrail (m0-guardarrail.yaml)
+# y ese orden no es casual: nada se crea en esta cuenta antes que el freno.
+#
+# ---------------------------------------------------------------------------
+# LAS TRES COSAS QUE NO SE PUEDEN CAMBIAR SIN ROMPER ALGO
+# ---------------------------------------------------------------------------
+# 1. BillingMode: PROVISIONED. No es preferencia: es lo que exige el free tier
+#    perpetuo de DynamoDB (25 GB, 25 WCU, 25 RCU). Pasarla a PAY_PER_REQUEST es
+#    una accion prohibida (CE-1, fila A2) y saca la tabla del free tier en
+#    silencio, sin error y sin aviso. Con la cuenta en Plan de Pago y CERO
+#    creditos (D-P4-17), eso deja de ser un susto y pasa a ser una factura.
+#
+# 2. Una sola tabla, clave compuesta (PK, SK), SIN indices secundarios
+#    (ADR-24). El esquema es exactamente el que crea `crear_tabla()` en
+#    reservas/adaptadores/dynamodb.py. Si los dos divergen, las pruebas locales
+#    dejan de decir algo sobre el motor real, que es justo lo que I-3 existe
+#    para comprobar.
+#
+# 3. Ninguna replica, ninguna tabla global (CE-1, fila A1). Rompe C1 en
+#    silencio: con resolucion por ultimo-en-escribir, una de dos reservas
+#    simultaneas desaparece sin ruido.
+#
+# ---------------------------------------------------------------------------
+# LO QUE ESTA PILA NO FIJA
+# ---------------------------------------------------------------------------
+# El TTL apunta al atributo `ttl`, pero el horizonte H que lo alimenta sigue
+# ABIERTO (RT-2, marcado VALIDAR-ERICK en modelo-datos §10.1). El codigo usa
+# HORIZONTE_H_DIAS_PRUEBA y lo declara como valor de prueba, no como decision.
+# Activar el TTL aqui no cierra esa decision: solo deja el mecanismo puesto.
+
+Description: >-
+  I-3 - Tabla unica de reservas en DynamoDB. Modo aprovisionado por free tier,
+  clave compuesta, sin indices, sin replicas.
+
+Parameters:
+
+  NombreTabla:
+    Type: String
+    Default: reservas-zonas-comunes
+    Description: Debe coincidir con config.TABLA del repositorio.
+
+  CapacidadLectura:
+    Type: Number
+    Default: 25
+    MinValue: 1
+    MaxValue: 25
+    Description: >-
+      RCU. El maximo es 25 a proposito: es el techo del free tier perpetuo.
+      Subirlo de 25 empieza a costar dinero real, y el limite de la plantilla
+      existe para que eso no ocurra por un dedazo.
+
+  CapacidadEscritura:
+    Type: Number
+    Default: 25
+    MinValue: 1
+    MaxValue: 25
+    Description: >-
+      WCU. Mismo techo y misma razon. Ademas es el presupuesto de escritura
+      sobre el que se calcula el orden de degradacion de RR-08.
+
+Resources:
+
+  TablaReservas:
+    Type: AWS::DynamoDB::Table
+    # No se borra al borrar la pila: una tabla de reservas no desaparece porque
+    # alguien deshaga un despliegue. En I-3 esta vacia y no importa, pero la
+    # politica correcta se pone antes de que importe, no despues.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Ref NombreTabla
+      BillingMode: PROVISIONED
+      TableClass: STANDARD          # El free tier perpetuo exige clase Standard.
+      AttributeDefinitions:
+        # Solo se declaran los atributos que forman clave. DynamoDB no tiene
+        # esquema para el resto, y declararlos aqui seria describir una
+        # estructura que el motor no impone.
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: !Ref CapacidadLectura
+        WriteCapacityUnits: !Ref CapacidadEscritura
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        # Desactivado a proposito. PITR se cobra por GB de almacenamiento
+        # continuo y NO esta en el free tier. Los datos de este proyecto son
+        # sinteticos y reproducibles con el comando de sembrado: pagar por
+        # recuperarlos seria pagar por lo que se regenera gratis.
+        PointInTimeRecoveryEnabled: false
+
+Outputs:
+
+  NombreTabla:
+    Description: Nombre de la tabla. Debe coincidir con config.TABLA.
+    Value: !Ref TablaReservas
+
+  ArnTabla:
+    Value: !GetAtt TablaReservas.Arn
+
+  Aviso:
+    Description: Recordatorio operativo.
+    Value: >-
+      Modo PROVISIONED y 25/25 por free tier. Pasar a bajo demanda o subir de 25
+      cuesta dinero real: la cuenta no tiene creditos (D-P4-17).

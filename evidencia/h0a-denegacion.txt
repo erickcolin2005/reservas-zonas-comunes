@@ -1,0 +1,29 @@
+NOTA: el identificador de la cuenta de AWS se ha sustituido por <CUENTA>
+antes de publicar. Es la UNICA modificacion sobre la salida original: no se
+ha tocado ningun resultado, ningun codigo de error ni ningun mensaje. Se
+declara aqui porque una evidencia editada sin decirlo deja de ser evidencia.
+
+H0-a - la politica de denegacion deniega lo que dice denegar
+Fecha: 2026-08-11T22:37:57Z | Cuenta: <CUENTA> | Usuario: p4-erick
+Politica: arn:aws:iam::<CUENTA>:policy/p4-m0-guardarrail-denegar-crecimiento
+
+--- CONTROL 1: antes de adjuntar, la accion prohibida DEBE funcionar ---
+CREATING
+  (resultado control 1 arriba)
+
+aws: [ERROR]: An error occurred (ResourceInUseException) when calling the DeleteTable operation: Attempt to change a resource which is still in use: Table is being created: h0a-sonda
+
+--- PRUEBA: con la politica ADJUNTA, la misma accion debe ser DENEGADA ---
+Intento 1: DENEGADO
+
+aws: [ERROR]: An error occurred (AccessDeniedException) when calling the CreateTable operation: User: arn:aws:iam::<CUENTA>:user/p4-erick is not authorized to perform: dynamodb:CreateTable on resource: arn:aws:dynamodb:us-east-1:<CUENTA>:table/h0a-sonda2 with an explicit deny in an identity-based policy: arn:aws:iam::<CUENTA>:policy/p4-m0-guardarrail-denegar-crecimiento
+
+--- CONTROL 2: una accion PERMITIDA debe seguir funcionando ---
+dynamodb:ListTables -> h0a-sonda
+sts:GetCallerIdentity -> arn:aws:iam::<CUENTA>:user/p4-erick
+
+--- LIMPIEZA ---
+DELETING
+Politica desadjuntada del usuario. Estado final: sin denegacion activa.
+VEREDICTO H0-a: PASA. La politica deniega, nombra su propia razon, y no rompe lo permitido.
+VEREDICTO H0-b: NO OBSERVADO. Requiere cruzar el umbral real de 5 USD.

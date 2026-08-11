@@ -70,44 +70,89 @@ class ExtremoNoPermitido(Exception):
 
 
 def _comprobar_extremo(endpoint: str) -> None:
-    if "amazonaws.com" in endpoint:
+    """El motor real solo se alcanza con la llave puesta.
+
+    En I-1 esto era un "no" en redondo. En I-3 pasa a ser un "no, salvo que lo
+    pidas explicitamente": `RESERVAS_MOTOR_REAL=1`. Ver `config.motor_real()`
+    para el porque, que no es ceremonia -la cuenta es de pago y sin creditos.
+    """
+    if "amazonaws.com" in endpoint and not config.motor_real():
         raise ExtremoNoPermitido(
-            f"{endpoint} es el motor real. En I-1 no se toca AWS: el CI corre "
-            "entero contra el sustituto local (ADR-08) y cruzar la puerta de "
-            "AWS es I-2, con su propio disparador. Si esto es I-3 o posterior, "
-            "quita esta comprobacion a proposito y deja escrito por que."
+            f"{endpoint} es el motor real y {config.VARIABLE_MOTOR_REAL} no "
+            "esta puesta. El CI corre entero contra el sustituto local "
+            "(ADR-08). Para hablar con AWS a proposito: "
+            f"{config.VARIABLE_MOTOR_REAL}=1."
         )
 
 
-def crear_cliente(endpoint: str | None = None):
-    """Cliente apuntando al sustituto local.
+# Parametros compartidos por los dos clientes. Se definen una sola vez para que
+# local y real no puedan divergir sin que se note: si los reintentos o el pool
+# fueran distintos entre ambos, V-2b estaria comparando dos configuraciones en
+# vez de dos motores.
+_CONFIG_BOTOCORE = ConfigBotocore(
+    # Sin reintentos del cliente: los reintentos son una decision de
+    # diseno (ADR-04) y tienen que ser visibles y contables, no un
+    # comportamiento oculto de la libreria que falsearia la medicion.
+    retries={"max_attempts": 0, "mode": "standard"},
+    connect_timeout=5,
+    read_timeout=15,
+    max_pool_connections=200,
+)
 
-    Las credenciales son literales de relleno: el sustituto local no valida
-    ninguna, y **este repositorio no contiene ningun secreto** (RNF-07). Si
-    alguna vez hicieran falta credenciales de verdad, este ya no seria el
-    entorno de I-1.
+
+def crear_cliente(endpoint: str | None = None):
+    """Cliente de DynamoDB: sustituto local por defecto, motor real con llave.
+
+    **Motor real** (`RESERVAS_MOTOR_REAL=1`): no se pasa `endpoint_url` ni
+    credencial alguna. Las credenciales salen de la cadena por defecto de boto3
+    -perfil, variables de entorno, rol-, nunca del codigo: **este repositorio no
+    contiene ningun secreto y no va a contenerlo** (RNF-07).
+
+    **Sustituto local** (por defecto): credenciales de relleno, porque el
+    sustituto no valida ninguna.
     """
-    _comprobar_extremo(endpoint or config.endpoint())
+    if endpoint is None and config.motor_real():
+        return boto3.client(
+            "dynamodb",
+            region_name=config.REGION,
+            config=_CONFIG_BOTOCORE,
+        )
+
+    destino = endpoint or config.endpoint()
+    _comprobar_extremo(destino)
     return boto3.client(
         "dynamodb",
-        endpoint_url=endpoint or config.endpoint(),
+        endpoint_url=destino,
         region_name=config.REGION,
         aws_access_key_id="local",
         aws_secret_access_key="local",
-        config=ConfigBotocore(
-            # Sin reintentos del cliente: los reintentos son una decision de
-            # diseno (ADR-04) y tienen que ser visibles y contables, no un
-            # comportamiento oculto de la libreria que falsearia la medicion.
-            retries={"max_attempts": 0, "mode": "standard"},
-            connect_timeout=5,
-            read_timeout=15,
-            max_pool_connections=200,
-        ),
+        config=_CONFIG_BOTOCORE,
     )
 
 
-def crear_tabla(cliente, tabla: str = config.TABLA) -> None:
-    """Una tabla, clave compuesta, modo aprovisionado, sin indices (ADR-20/24)."""
+def crear_tabla(
+    cliente,
+    tabla: str = config.TABLA,
+    rcu: int | None = None,
+    wcu: int | None = None,
+) -> None:
+    """Una tabla, clave compuesta, modo aprovisionado, sin indices (ADR-20/24).
+
+    `rcu`/`wcu` existen por una razon concreta y contraintuitiva, que conviene
+    tener escrita porque no se deduce leyendo el codigo:
+
+        **El free tier de DynamoDB no tiene holgura para una segunda tabla.**
+
+    Son 25 WCU y 25 RCU aprovisionadas, que se miden como unidades-hora: unas
+    18.250 WCU-hora al mes. La tabla principal, a 25 WCU, consume el 100 % de
+    esa asignacion si esta viva el mes entero. Cualquier tabla adicional a 25
+    WCU -una sonda, una prueba, un experimento- sale del free tier y, con la
+    cuenta en Plan de Pago y CERO creditos (D-P4-17), **cuesta dinero real**.
+
+    Contra el sustituto local da igual y se usan los valores de `config`.
+    Contra el motor real, quien cree una tabla auxiliar debe pedir capacidad
+    pequena a proposito.
+    """
     cliente.create_table(
         TableName=tabla,
         AttributeDefinitions=[
@@ -119,24 +164,106 @@ def crear_tabla(cliente, tabla: str = config.TABLA) -> None:
             {"AttributeName": "SK", "KeyType": "RANGE"},
         ],
         ProvisionedThroughput={
-            "ReadCapacityUnits": config.RCU,
-            "WriteCapacityUnits": config.WCU,
+            "ReadCapacityUnits": config.RCU if rcu is None else rcu,
+            "WriteCapacityUnits": config.WCU if wcu is None else wcu,
         },
+    )
+    # DIFERENCIA REAL ENTRE LOS DOS MOTORES, encontrada al ejecutar V-1:
+    # en el sustituto local `create_table` deja la tabla utilizable de
+    # inmediato; en DynamoDB de verdad la creacion es ASINCRONA y la tabla pasa
+    # por CREATING. Escribir sin esperar produce ResourceNotFoundException, que
+    # es un error desconcertante -la tabla existe, solo que aun no.
+    #
+    # No se detecto en I-1 y no podia detectarse: es exactamente la clase de
+    # fallo que el sustituto esconde. Queda anotado como hallazgo de V-2b.
+    #
+    # Contra el sustituto el espera-a-que-exista devuelve al instante, asi que
+    # el codigo es el mismo para los dos y no hay dos caminos que mantener.
+    cliente.get_waiter("table_exists").wait(
+        TableName=tabla, WaiterConfig={"Delay": 2, "MaxAttempts": 60}
     )
 
 
 def borrar_tabla(cliente, tabla: str = config.TABLA) -> None:
+    # Red de seguridad: la tabla principal del motor real la gestiona
+    # CloudFormation y no la borra el codigo de pruebas ni por descuido. Las
+    # tablas auxiliares (sondas) si se borran, y por eso el guardia mira el
+    # nombre en vez de prohibir el borrado en general.
+    if config.motor_real() and tabla == config.TABLA:
+        raise ExtremoNoPermitido(
+            f"{tabla} en el motor real la gestiona CloudFormation "
+            "(infra/tabla-reservas.yaml). Para dejarla limpia usa "
+            "vaciar_tabla(); para eliminarla de verdad, borra la pila."
+        )
     try:
         cliente.delete_table(TableName=tabla)
     except ClientError as error:
         if error.response["Error"]["Code"] != "ResourceNotFoundException":
             raise
+        return
+    # Ver `crear_tabla`: en el motor real el borrado tampoco es instantaneo, y
+    # recrear sobre una tabla que aun se esta borrando falla con
+    # ResourceInUseException.
+    cliente.get_waiter("table_not_exists").wait(
+        TableName=tabla, WaiterConfig={"Delay": 2, "MaxAttempts": 60}
+    )
 
 
-def recrear_tabla(cliente, tabla: str = config.TABLA) -> None:
-    """Estado limpio. El banco no acumula estado entre casos (banco §1)."""
+def vaciar_tabla(cliente, tabla: str = config.TABLA) -> int:
+    """Borra todos los items dejando la tabla en pie. Devuelve cuantos borro.
+
+    Existe porque contra el motor real NO se puede recrear la tabla: ver
+    `recrear_tabla`.
+    """
+    borrados = 0
+    paginador = cliente.get_paginator("scan")
+    for pagina in paginador.paginate(
+        TableName=tabla, ProjectionExpression="PK,SK"
+    ):
+        claves = pagina.get("Items", [])
+        for i in range(0, len(claves), 25):
+            lote = claves[i : i + 25]
+            cliente.batch_write_item(
+                RequestItems={
+                    tabla: [{"DeleteRequest": {"Key": c}} for c in lote]
+                }
+            )
+            borrados += len(lote)
+    return borrados
+
+
+def recrear_tabla(
+    cliente,
+    tabla: str = config.TABLA,
+    rcu: int | None = None,
+    wcu: int | None = None,
+) -> None:
+    """Estado limpio. El banco no acumula estado entre casos (banco §1).
+
+    Ver `crear_tabla` para por que `rcu`/`wcu` son parametros y no constantes.
+
+    **Contra el motor real, la tabla principal NO se recrea: se vacia.** Y la
+    razon no es rendimiento:
+
+        Esa tabla la gestiona CloudFormation (`infra/tabla-reservas.yaml`).
+        Borrarla y volver a crearla desde el codigo de pruebas dejaria una
+        tabla con el mismo nombre pero SIN lo que la plantilla configura -TTL
+        activado, clase Standard, politicas de retencion-. CloudFormation
+        seguiria creyendo que la gestiona, porque el nombre es el mismo, y la
+        diferencia no aparece en ningun error: es deriva silenciosa, que es la
+        peor clase.
+
+    Vaciar deja exactamente el mismo estado observable para el banco -ningun
+    item- sin tocar la definicion de la tabla.
+
+    Contra el sustituto local se recrea como siempre: alli no hay
+    CloudFormation, no hay nada que derivar, y recrear es mas rapido.
+    """
+    if config.motor_real() and tabla == config.TABLA:
+        vaciar_tabla(cliente, tabla)
+        return
     borrar_tabla(cliente, tabla)
-    crear_tabla(cliente, tabla)
+    crear_tabla(cliente, tabla, rcu=rcu, wcu=wcu)
 
 
 class AdaptadorDynamoDB:

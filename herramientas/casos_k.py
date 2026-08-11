@@ -138,7 +138,7 @@ CASOS = {"K-01": k01, "K-02": k02, "K-03": k03}
 
 def ejecutar(
     caso: CasoK,
-    endpoint: str,
+    endpoint: str | None,
     t0: datetime,
     fabrica_adaptador=None,
     tabla: str = config.TABLA,
@@ -212,12 +212,20 @@ def main(argv=None) -> int:
     )
     args = parser.parse_args(argv)
 
-    endpoint = args.endpoint or config.endpoint()
+    # Contra el motor real el extremo es None a proposito: `crear_cliente` deja
+    # entonces que boto3 resuelva el del servicio y tome la credencial de la
+    # cadena por defecto. Pasarle `config.endpoint()` aqui apuntaria al
+    # sustituto local incluso con la llave puesta, y la corrida diria "motor
+    # real" midiendo localhost.
+    real = config.motor_real()
+    endpoint = args.endpoint or (None if real else config.endpoint())
     cliente = dynamodb.crear_cliente(endpoint)
     t0 = tiempo.t0_desde(datetime.now(timezone.utc))
 
     partes = [
-        f"Casos K contra el sustituto local — {endpoint}",
+        f"Casos K contra el MOTOR REAL (DynamoDB en AWS, {config.REGION})"
+        if real
+        else f"Casos K contra el sustituto local — {endpoint}",
         f"T0 derivado: {t0.isoformat()}",
         "",
     ]

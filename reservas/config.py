@@ -25,12 +25,42 @@ RCU = 25
 ENDPOINT_POR_DEFECTO = "http://localhost:8000"
 """El sustituto local. El CI no toca el motor real, nunca (ADR-08)."""
 
+VARIABLE_MOTOR_REAL = "RESERVAS_MOTOR_REAL"
+"""Llave explicita para hablar con DynamoDB de verdad. Ver `motor_real()`."""
+
+
+def motor_real() -> bool:
+    """¿Se apunta al motor real de AWS?
+
+    **Abierto en I-3, y a proposito con llave.** En I-1 el adaptador se negaba
+    en redondo a conectarse a `amazonaws.com`, y el propio codigo dejo escrito
+    que en I-3 habria que abrirlo "a proposito, dejando escrito por que". Esto
+    es ese porque:
+
+    V-1 solo se puede ejecutar contra el motor real. La asimetria del tramo
+    local lo obliga: un sustituto serializa MAS que el servicio real, asi que
+    una confirmacion en local NO implica una confirmacion en AWS. H1 es
+    provisional hasta que esto corra contra DynamoDB.
+
+    **Por que sigue siendo una puerta con llave y no una puerta abierta:**
+    la cuenta esta en Plan de Pago y con CERO creditos (D-P4-17). Ya no hay
+    apagado automatico ni credito que absorba nada: cada peticion al motor real
+    es dinero. Que haga falta poner `RESERVAS_MOTOR_REAL=1` a mano significa
+    que nadie golpea AWS por tener mal una variable de entorno, ni por
+    ejecutar la suite sin pensar.
+
+    El CI **nunca** debe ponerla. Ya tiene ademas un paso que falla si aparecen
+    credenciales de AWS en el entorno.
+    """
+    return os.environ.get(VARIABLE_MOTOR_REAL, "").strip() == "1"
+
 
 def endpoint() -> str:
-    """Extremo del motor. Siempre local en I-1.
+    """Extremo del sustituto local.
 
     Se lee de `RESERVAS_ENDPOINT` para que el CI pueda apuntar a su contenedor
-    de servicio. **Si algun dia apunta a AWS, deja de ser I-1.**
+    de servicio. **No se usa cuando `motor_real()` es cierto**: contra AWS no se
+    pasa `endpoint_url`, se deja que boto3 resuelva el del servicio.
     """
     return os.environ.get("RESERVAS_ENDPOINT", ENDPOINT_POR_DEFECTO)
 

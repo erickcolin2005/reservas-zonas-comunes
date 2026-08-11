@@ -1,0 +1,48 @@
+V-2b — semantica de error: sustituto local vs motor real
+======================================================================
+
+  local: v2a-sustituto-local.txt
+  real:  v1-motor-real.txt
+
+  Se comparan los CODIGOS de error de cada comprobacion, no el texto
+  entero: lo que se afirma es que la clase del fallo coincide.
+
+  [IGUAL] V2a-1  ¿La escritura condicional impide la segunda escritura?
+        codigos en ambos: ['ConditionalCheckFailedException']
+
+  [IGUAL] V2a-2  ¿Devuelve el item ganador cuando la condicion falla (ALL_OLD)?
+        codigos en ambos: ['(ninguno)']
+
+  [IGUAL] V2a-3  ¿Implementa TransactWriteItems?
+        codigos en ambos: ['(ninguno)']
+
+  [IGUAL] V2a-4  ¿La transaccion es todo-o-nada ante una condicion incumplida?
+        codigos en ambos: ['TransactionCanceledException']
+
+  [IGUAL] V2a-5  ¿Las razones de cancelacion llegan una por item y en orden?
+        codigos en ambos: ['ConditionalCheckFailed']
+
+  [IGUAL] V2a-6  ¿La razon de cancelacion trae el item ganador?
+        codigos en ambos: ['(ninguno)']
+
+  [IGUAL] V2a-7  ¿Cuantos items admite una transaccion?
+        codigos en ambos: ['ValidationException']
+
+  [IGUAL] V2a-8  ¿Un contador con condicion 'contador < tope' corta en el tope?
+        codigos en ambos: ['ConditionalCheckFailedException']
+
+  [DIFIERE (esperado)] V2a-9  ¿Produce TransactionConflict bajo transacciones concurrentes?
+        local: ['(ninguno)']
+        real:  ['TransactionConflict']
+        motivo: El sustituto serializa por construccion y puede no producir nunca TransactionConflict. Si el real si lo produce, el reintento de ADR-04 solo se ejercita de verdad contra el motor real.
+
+  [IGUAL] V2a-10  ¿Respeta la capacidad aprovisionada (25 WCU) y estrangula?
+        codigos en ambos: ['(ninguno)']
+
+  [IGUAL] V2a-11  ¿Admite activar la expiracion por atributo (ttl)?
+        codigos en ambos: ['(ninguno)']
+
+======================================================================
+VEREDICTO V-2b: POSITIVA — la clase del fallo coincide en todas las comprobaciones bloqueantes. El CI contra el sustituto conserva su capacidad de afirmar por que se rechazo, no solo que se rechazo.
+
+Limite declarado: esto compara dos mediciones registradas, no las re-ejecuta. Hereda la vigencia de los dos ficheros de evidencia.

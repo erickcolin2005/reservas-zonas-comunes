@@ -29,6 +29,7 @@ from datetime import date
 
 from botocore.exceptions import ClientError
 
+from reservas import config
 from reservas.adaptadores.dynamodb import N, S, crear_cliente, recrear_tabla
 
 TABLA_SONDA = "v2a-sonda"
@@ -69,8 +70,17 @@ class Informe:
         return all(h.ok for h in self.hallazgos if h.bloqueante)
 
     def texto(self) -> str:
+        # La sonda es la misma para los dos motores, pero el informe TIENE que
+        # decir contra cual corrio. Cuando se ejecuto por primera vez contra
+        # AWS, el fichero de evidencia salio titulado "capacidades del sustituto
+        # local" y firmado "VEREDICTO V-2a" -describiendo como local una medicion
+        # del motor real-. Una evidencia mal etiquetada es peor que no tenerla:
+        # la primera se publica y se cree.
+        real = config.motor_real()
+        etiqueta = "V-1 — capacidades del MOTOR REAL (DynamoDB en AWS)" if real \
+            else "V-2a — capacidades del sustituto local"
         lineas = [
-            "V-2a — capacidades del sustituto local",
+            etiqueta,
             "=" * 70,
             "",
         ]
@@ -81,21 +91,43 @@ class Informe:
                     lineas.append(f"          {fila}")
             lineas.append("")
         lineas.append("=" * 70)
-        lineas.append(
-            "VEREDICTO V-2a: "
-            + (
-                "POSITIVA — el sustituto implementa escritura condicional y "
-                "transacciones. El CI puede correr los casos K."
-                if self.veredicto_v2a
-                else "NEGATIVA — falta alguna capacidad bloqueante. El CI NO "
-                "puede correr los casos K y T7a se declara incumplida."
+        if real:
+            lineas.append(
+                "VEREDICTO V-1: "
+                + (
+                    "POSITIVA — el motor real implementa escritura condicional "
+                    "y transacciones con razones de cancelacion por item. "
+                    "G-a…G-d y N-f se sostienen. H1 puede pasar de provisional "
+                    "a FIRME."
+                    if self.veredicto_v2a
+                    else "NEGATIVA — el motor real NO sostiene alguna garantia "
+                    "bloqueante. Se activa D-P4-06: se cambia de motor "
+                    "documentandolo, o se publica el hallazgo en vez de la "
+                    "afirmacion. Lo que NO es opcion es publicar 'cero doble "
+                    "reserva' sin haberlo demostrado."
+                )
             )
-        )
-        lineas.append("")
-        lineas.append(
-            "Recordatorio: esto NO compara con el motor real (eso es V-2b, I-3). "
-            "Una confirmacion en local no implica una confirmacion en AWS."
-        )
+            lineas.append("")
+            lineas.append(
+                "Esta corrida SI es contra AWS. La asimetria del tramo local "
+                "deja de aplicar: aqui una confirmacion vale como confirmacion."
+            )
+        else:
+            lineas.append(
+                "VEREDICTO V-2a: "
+                + (
+                    "POSITIVA — el sustituto implementa escritura condicional y "
+                    "transacciones. El CI puede correr los casos K."
+                    if self.veredicto_v2a
+                    else "NEGATIVA — falta alguna capacidad bloqueante. El CI NO "
+                    "puede correr los casos K y T7a se declara incumplida."
+                )
+            )
+            lineas.append("")
+            lineas.append(
+                "Recordatorio: esto NO compara con el motor real (eso es V-2b, I-3). "
+                "Una confirmacion en local no implica una confirmacion en AWS."
+            )
         return "\n".join(lineas)
 
 
@@ -105,7 +137,14 @@ def _clave(pk: str, sk: str = "X") -> dict:
 
 def sondear(cliente, tabla: str = TABLA_SONDA) -> Informe:
     informe = Informe()
-    recrear_tabla(cliente, tabla)
+    # Capacidad pequena SOLO contra el motor real: la tabla principal ya consume
+    # el free tier entero de DynamoDB (25 WCU), asi que una segunda tabla a 25
+    # se sale y cuesta dinero. 5 unidades sobran para una sonda de correccion
+    # -escribe decenas de items, no miles- y no llegan a estrangular.
+    # Contra el sustituto local la capacidad es ficcion: se usan los valores de
+    # config para no introducir una diferencia gratuita entre los dos motores.
+    pequena = 5 if config.motor_real() else None
+    recrear_tabla(cliente, tabla, rcu=pequena, wcu=pequena)
 
     # -- 1 · escritura condicional sobre un item --------------------------
     cliente.put_item(
@@ -439,6 +478,18 @@ def _sondear_capacidad(cliente, tabla: str, escrituras: int = 200) -> str:
                 raise
     if estrangulos:
         return f"SI. {estrangulos} de {escrituras} escrituras estranguladas."
+    if config.motor_real():
+        # No concluir "el motor no respeta la capacidad": seria falso y ademas
+        # es la conclusion comoda. DynamoDB acumula capacidad no usada como
+        # RESERVA DE RAFAGA, asi que una tanda corta cabe entera aunque supere
+        # la capacidad sostenida. Lo unico que este dato demuestra es que 200
+        # escrituras seguidas no la agotan.
+        return (
+            f"NO en esta corrida. {escrituras} escrituras seguidas sin "
+            "estrangulamiento. NO significa que no estrangule: significa que "
+            "la reserva de rafaga absorbio la tanda. Medir la tasa sostenida "
+            "real es V-8, con su propio procedimiento. [NV] aqui."
+        )
     return (
         f"NO. {escrituras} escrituras seguidas sin un solo estrangulamiento, "
         "muy por encima de 25 WCU. El sustituto ignora la capacidad aprovisionada."
@@ -454,7 +505,18 @@ def main() -> int:
 
     destino = pathlib.Path(__file__).resolve().parent.parent / "evidencia"
     destino.mkdir(exist_ok=True)
-    (destino / "v2a-sustituto-local.txt").write_text(texto + "\n", encoding="utf-8")
+    # El nombre del fichero DEPENDE del motor. Antes era fijo
+    # ("v2a-sustituto-local.txt") y la primera corrida contra AWS sobrescribio
+    # la linea base local con resultados del motor real, dejando un fichero que
+    # se llamaba "sustituto local" y contenia otra cosa.
+    #
+    # Es el mismo defecto que el titulo mal puesto, y aqui era peor: no solo
+    # etiquetaba mal, DESTRUIA el termino de comparacion. Y V-2b consiste
+    # precisamente en comparar los dos, asi que la corrida que produce la mitad
+    # nueva borraba la mitad vieja.
+    nombre = "v1-motor-real.txt" if config.motor_real() else "v2a-sustituto-local.txt"
+    (destino / nombre).write_text(texto + "\n", encoding="utf-8")
+    print(f"\n[evidencia] {destino / nombre}")
     return 0 if informe.veredicto_v2a else 1
 
 
