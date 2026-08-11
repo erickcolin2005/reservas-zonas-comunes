@@ -44,6 +44,9 @@ class CasoK:
     confirmadas_esperadas: int
     minimo_competidoras: int
     confirmadas_por_franja: int = 1
+    reglas_que_explican_franja_vacia: frozenset = frozenset()
+    """Reglas ajenas a la disputa de franja que explican una franja sin
+    confirmar. Solo K-05 la usa, con RR-07. Ver `evaluar_invariantes`."""
 
 
 @dataclass
@@ -128,7 +131,51 @@ def k03(t0: datetime, conjunto: sembrado.Conjunto) -> CasoK:
     )
 
 
-CASOS = {"K-01": k01, "K-02": k02, "K-03": k03}
+def k05(t0: datetime, conjunto: sembrado.Conjunto) -> CasoK:
+    """4 simultaneas de la MISMA unidad, 4 franjas DISTINTAS de E-CAN, cupo 3.
+
+    **Es la segunda carrera, y es distinta de la del hueco.** En K-01 compiten
+    unidades distintas por la misma clave de franja: la escritura condicional
+    sobre esa clave las ordena. Aqui **ninguna franja esta disputada** -cada
+    solicitud pide la suya- y aun asi hay carrera: las cuatro leen el mismo
+    contador de cupo, ven 0 usadas de 3, y las cuatro concluyen que caben.
+
+    Lo que la cierra es que el contador entra en la MISMA transaccion
+    (ADR-03) con la condicion `usadas < cupo`. Sin eso, una lectura previa
+    seguida de una escritura deja el intervalo por el que se cuelan las cuatro,
+    y el sistema confirmaria 4 sobre un cupo de 3 **sin cometer ni una sola
+    doble reserva**: cuatro franjas distintas, cuatro reservas legitimas por
+    separado, y el cupo violado. Es un fallo que K-01 no puede detectar.
+
+    Es el riesgo R-P4-04, que F0 no habia previsto.
+
+    Desenlace esperado (banco §5.1): **3 confirmadas y 1 RR-07**. Y una
+    precision del propio banco: **cual de las cuatro recibe el RR-07 no es
+    determinista**, asi que el caso no lo fija -solo el reparto-.
+    """
+    unidad = conjunto.rafaga[0]
+    # Cuatro dias distintos de la MISMA semana. El cupo de E-CAN es semanal, y
+    # si las cuatro cayeran en semanas distintas no competirian por nada.
+    return CasoK(
+        id="K-05",
+        descripcion="4 simultaneas de la misma unidad en 4 franjas de E-CAN, cupo 3",
+        solicitudes=tuple(
+            Solicitud(unidad, "E-CAN", tiempo.instante_mas(t0, 4, 10 + i), 1)
+            for i in range(4)
+        ),
+        confirmadas_esperadas=3,
+        # Las cuatro son de la misma unidad y compiten por el contador, no por
+        # una franja. La cota de 4 del banco sale de aqui: si el tope de tasa
+        # por ventana fuera menor que 4, apareceria SYS-TASA y la corrida seria
+        # invalida por configuracion, no por el cupo.
+        minimo_competidoras=4,
+        reglas_que_explican_franja_vacia=frozenset({"RR-07"}),
+    )
+
+
+CASOS = {"K-01": k01, "K-02": k02, "K-03": k03, "K-05": k05}
+"""K-04, K-06 y K-07 siguen sin implementar: pertenecen a I-4 (banco completo),
+no a I-3. Aqui estan los que verifican la carrera."""
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +229,7 @@ def ejecutar(
         minimo_competidoras=caso.minimo_competidoras,
         confirmadas_esperadas_total=caso.confirmadas_esperadas,
         maximo_confirmadas_por_franja=caso.confirmadas_por_franja,
+        reglas_que_explican_franja_vacia=caso.reglas_que_explican_franja_vacia,
     )
     texto = informe(
         f"{caso.id} — {caso.descripcion}", desglose, simultaneidad, invariantes

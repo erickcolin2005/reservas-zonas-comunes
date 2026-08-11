@@ -176,6 +176,7 @@ def evaluar_invariantes(
     minimo_competidoras: int,
     confirmadas_esperadas_total: int,
     maximo_confirmadas_por_franja: int = 1,
+    reglas_que_explican_franja_vacia: frozenset = frozenset(),
 ) -> Invariantes:
     """Aplica las tres capas sobre un reparto agrupado por franja.
 
@@ -245,6 +246,38 @@ def evaluar_invariantes(
             )
         if maximo_confirmadas_por_franja < 1 or d.confirmadas >= 1:
             continue
+        # Franja vacia EXPLICADA por una regla que no es disputa de franja.
+        #
+        # Existe por K-05 y hay que leerlo con cuidado, porque parece una
+        # excepcion de conveniencia y no lo es. En K-05 las cuatro solicitudes
+        # son de la MISMA unidad y piden CUATRO franjas distintas: ninguna
+        # franja esta disputada. La cuarta se rechaza por RR-07 (cupo agotado),
+        # que no tiene nada que ver con la franja que pedia.
+        #
+        # Sin esto, V-c daria ROJO con el sistema correcto -"una sola
+        # competidora y no se confirmo"- exactamente igual que el enunciado
+        # literal del banco daba rojo en K-02. El banco ya lo habia visto:
+        # para K-05 dice "I-2b y I-2c no aplican".
+        #
+        # Por que asi y no con un booleano que apague la vivacidad del caso:
+        # un interruptor apagaria la comprobacion entera y se llevaria por
+        # delante los fallos de verdad. Esto solo perdona la franja cuando
+        # TODAS sus competidoras fueron rechazadas por una regla declarada de
+        # antemano. Si una se pierde por contencion, o por una regla que no
+        # esta en la lista, sigue siendo rojo.
+        if reglas_que_explican_franja_vacia:
+            competidoras = [x for x in lista if x.es_competidora_efectiva]
+            if competidoras and all(
+                x.cubo is Cubo.RECHAZADA_REGLA
+                and x.regla in reglas_que_explican_franja_vacia
+                for x in competidoras
+            ):
+                avisos.append(
+                    f"franja {franja}: sin confirmar, explicado por "
+                    f"{sorted({x.regla for x in competidoras})} — regla ajena a "
+                    "la disputa de franja, declarada por el caso"
+                )
+                continue
         # V-b · disputada por varias y nadie gano.
         if d.competidoras_efectivas >= 2:
             motivos_v.append(

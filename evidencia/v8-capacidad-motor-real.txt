@@ -1,0 +1,28 @@
+V-8 — capacidad del motor real
+======================================================================
+
+  tabla de sonda: v8-sonda a 5 WCU / 5 RCU
+  (pequena a proposito: la tabla principal ya consume el free tier)
+
+  En modo aprovisionado pasarse NO cuesta dinero: estrangula.
+  Forzar el estrangulamiento es gratis por construccion.
+
+  V8-1  Multiplicador de capacidad de la transaccion
+        escritura suelta = 1.0 WCU · transaccion de 2 items = 4.0 WCU (2.0 por item) → MULTIPLICADOR x2
+
+        CONSECUENCIA: el presupuesto de 25 WCU rinde ~12.5 escrituras transaccionales por segundo, no 25. El orden de
+        degradacion de RR-08 (arquitectura §14) se calcula sobre
+        esta cifra, no sobre la nominal.
+
+  V8-2  Limite de items por transaccion
+        aceptados [14, 25, 100] · primer rechazo 101:ValidationException. El peor caso del modelo son 14 items: margen holgado.
+
+  V8-3  Deposito de rafaga
+        ESTRANGULO tras 2176 escrituras en 226.7s (9.6/s sostenidas sobre 5 WCU aprovisionadas). El exceso sobre lo aprovisionado es el deposito de rafaga acumulado.
+
+  (tabla de sonda borrada)
+
+======================================================================
+Lo que V-8 NO mide: el comportamiento de la tabla principal a 25
+WCU bajo la carga de M7. Eso es la prueba de carga, y tiene su
+propio presupuesto en solicitudes.

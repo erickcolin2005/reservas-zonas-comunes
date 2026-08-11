@@ -16,7 +16,7 @@ T0 derivado: 2026-09-07T09:00:00-05:00
     S-1 max en vuelo a la vez ....... 50 de 50
     S-2 max ventanas solapadas ...... 50
     S-3 rechazos RR-11 .............. 49
-    dispersion de la barrera ........ 84.88 ms
+    dispersion de la barrera ........ 85.37 ms
 
   I-1 CORRECCION (C1): OK
   I-2 VIVACIDAD: OK
@@ -37,7 +37,7 @@ T0 derivado: 2026-09-07T09:00:00-05:00
     S-1 max en vuelo a la vez ....... 2 de 2
     S-2 max ventanas solapadas ...... 2
     S-3 rechazos RR-11 .............. 1
-    dispersion de la barrera ........ 1.19 ms
+    dispersion de la barrera ........ 1.46 ms
 
   I-1 CORRECCION (C1): OK
   I-2 VIVACIDAD: OK
@@ -58,9 +58,33 @@ T0 derivado: 2026-09-07T09:00:00-05:00
     S-1 max en vuelo a la vez ....... 50 de 50
     S-2 max ventanas solapadas ...... 50
     S-3 rechazos RR-11 .............. 45
-    dispersion de la barrera ........ 56.39 ms
+    dispersion de la barrera ........ 76.46 ms
 
   I-1 CORRECCION (C1): OK
   I-2 VIVACIDAD: OK
   I-3 VALIDEZ DE LA MEDICION: OK
+
+
+== K-05 — 4 simultaneas de la misma unidad en 4 franjas de E-CAN, cupo 3 
+
+  lanzadas .......................... 4
+  competidoras efectivas ............ 4
+  confirmadas ....................... 3
+
+  reparto por cubo de desenlace:
+    confirmada         3
+    RR-07              1
+
+  simultaneidad observada:
+    S-1 max en vuelo a la vez ....... 4 de 4
+    S-2 max ventanas solapadas ...... 4
+    S-3 rechazos RR-11 .............. 0   <-- SIN evidencia directa de carrera
+    dispersion de la barrera ........ 3.96 ms
+
+  I-1 CORRECCION (C1): OK
+  I-2 VIVACIDAD: OK
+  I-3 VALIDEZ DE LA MEDICION: OK
+  avisos:
+      - franja 2026-09-11 12:00: sin confirmar, explicado por ['RR-07'] — regla ajena a la disputa de franja, declarada por el caso
+      - RR-11 = 0: la corrida no produjo evidencia directa de carrera. Es aviso de medicion (RF-14), no fallo del sistema
 
