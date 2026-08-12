@@ -1,0 +1,79 @@
+M9 — evidencia del estado desplegado en AWS
+======================================================================
+Capturado: 2026-08-12T02:38:05+00:00
+Region: us-east-1
+El identificador de cuenta se enmascara como <CUENTA>.
+
+Esta captura se lee contra el IaC del repositorio: lo desplegado debe
+coincidir con lo declarado en infra/. Si difiere, hay deriva.
+
+----------------------------------------------------------------------
+1. LA TABLA — sostiene C1 y el presupuesto de escritura
+----------------------------------------------------------------------
+
+  nombre .................. reservas-zonas-comunes
+  estado .................. ACTIVE
+  creada .................. 2026-08-11T18:16:59.726000-05:00
+  clave ................... ['PK:HASH', 'SK:RANGE']
+  RCU / WCU ............... 25 / 25
+  clase ................... STANDARD
+  indices secundarios ..... 0
+  replicas ................ 0
+  ttl ..................... {'TimeToLiveStatus': 'ENABLED', 'AttributeName': 'ttl'}
+
+  QUE AFIRMA ESTO:
+    - modo APROVISIONADO con 25 WCU: es lo que exige el free
+      tier perpetuo. Bajo demanda saldria de el en silencio (CE-1 A2).
+    - 0 replicas: sin replicacion multirregion, que romperia C1 en
+      silencio por resolucion ultimo-en-escribir (CE-1 A1).
+    - 0 indices secundarios: una sola tabla, como fija ADR-24.
+
+----------------------------------------------------------------------
+2. EL GUARDARRAIL — lo unico que separa el proyecto de una factura
+----------------------------------------------------------------------
+
+  presupuesto ............. p4-m0-guardarrail-facturable-cero
+    tipo / periodo ........ COST / MONTHLY
+    limite ................ 0.01 USD
+    IncludeCredit ......... True
+
+  presupuesto ............. p4-m0-guardarrail-gasto-bruto
+    tipo / periodo ........ COST / MONTHLY
+    limite ................ 5.0 USD
+    IncludeCredit ......... False
+
+  QUE AFIRMA ESTO:
+    - hay DOS presupuestos porque necesitan agregaciones opuestas. El de
+      IncludeCredit=False mide el gasto BRUTO: si midiera el neto marcaria
+      ~0 mientras los creditos se vacian, porque el credito absorbe el
+      cargo. Es D-P4-13.
+
+  accion .................. APPLY_IAM_POLICY
+    modelo de aprobacion .. AUTOMATIC
+    estado ................ STANDBY
+    umbral ................ 100.0 (PERCENTAGE)
+
+  QUE AFIRMA ESTO:
+    - APPLY_IAM_POLICY es el unico tipo viable aqui: APPLY_SCP_POLICY exige
+      AWS Organizations, que convierte la cuenta en facturable (CE-1 B1).
+    - AUTOMATIC, no MANUAL. Con MANUAL el freno no frena: espera.
+
+----------------------------------------------------------------------
+3. LAS PILAS — todo se creo por IaC, nada a mano
+----------------------------------------------------------------------
+
+  p4-tabla-reservas        CREATE_COMPLETE      creada 2026-08-11T23:16:49+00:00
+  p4-m0-guardarrail        CREATE_COMPLETE      creada 2026-08-11T22:36:39+00:00
+
+  QUE AFIRMA ESTO:
+    - el guardarrail se desplego ANTES que la tabla, y ese orden es la
+      condicion D-P4-01: nada se crea en la cuenta antes del freno.
+    - todo es reconstruible con un comando. Es lo que hace que la senal
+      sobreviva al cierre de la cuenta (D-P4-03).
+
+======================================================================
+LO QUE ESTA CAPTURA NO CUBRE, y hace falta una persona para ello:
+  - captura visual (pantalla o video) del sistema funcionando. Tiene
+    sentido cuando exista interfaz, en I-6.
+  - H0-b: que Budgets aplique la denegacion por si solo al cruzar el
+    umbral. No se ha observado y no se afirma.
