@@ -62,10 +62,28 @@ ORDEN_CREACION = (
     "RR-11",
 )
 
-PENDIENTES_I4 = ("RR-01", "RR-02", "RR-03", "RR-04", "RR-05", "RR-06")
-"""Reglas registradas en su orden pero **sin cuerpo en I-1**. Las llena I-4."""
+PENDIENTES_I4 = ()
+"""Vacio desde I-4. Hasta entonces contenia RR-01…RR-06, registradas en su orden
+pero sin cuerpo. **El hueco se dejaba a la vista a proposito**, y esta tupla
+existia para que una prueba pudiera afirmarlo en vez de confiarlo a un comentario.
+
+Se conserva vacia, y no se borra, porque la prueba que la lee sigue teniendo
+trabajo: comprueba que la union de las tuplas cubre el orden de creacion entero.
+Si manana se anadiera una regla y nadie la implementara, esa prueba lo diria."""
 
 IMPLEMENTADAS_I1 = ("RR-07", "RR-08", "RR-09", "RR-10")
+
+IMPLEMENTADAS_I4 = ("RR-01", "RR-02", "RR-03", "RR-04", "RR-05", "RR-06")
+"""Las seis del flujo de creacion que I-4 llena. Dos matices que el codigo de
+`evaluar` explica y que conviene tener tambien aqui:
+
+  - **RR-03 no comprueba la rejilla**: la impone la canonizacion, antes de que
+    exista la Solicitud. El caso R-07 del banco muere en esa frontera.
+  - **RR-04 no comprueba el cero**: `Solicitud` rechaza cero franjas al
+    construirse. El caso R-11 muere alli.
+
+Las dos son fronteras mas fuertes que una regla -no dependen de que nadie las
+llame- pero **se declaran**, porque decir "RR-03 atrapa R-07" seria falso."""
 
 SOLO_CONDICION = ("RR-11",)
 """Inalcanzable desde la lectura. Vive en la condicion de escritura."""
@@ -85,18 +103,56 @@ def evaluar(
     solicitud: Solicitud, estado: EstadoLeido, instante_ref: datetime
 ) -> Veredicto:
     """Evalua en orden numerico y devuelve la PRIMERA regla violada."""
-    if estado.parametros is None:
-        raise PrecondicionAusente(
-            f"el espacio {solicitud.espacio!r} no esta en el estado leido; "
-            "RR-02 es de I-4 y aqui no se puede fabricar un veredicto"
-        )
-    if estado.unidad is None:
-        raise PrecondicionAusente(
-            f"la unidad {solicitud.unidad!r} no esta en el estado leido; "
-            "RR-01 es de I-4 y aqui no se puede fabricar un veredicto"
-        )
+    # RR-01 · Unidad valida y activa.
+    # Inexistente e inactiva producen el MISMO rechazo, a proposito: el sistema
+    # no confirma ni desmiente que la unidad exista (RF-17). Que las dos ramas
+    # devuelvan la misma cadena no es pereza, es el requisito.
+    if estado.unidad is None or not estado.unidad.activa:
+        return Veredicto.rechaza("RR-01")
 
-    # RR-01 .. RR-06 -> pendientes de I-4. Su hueco esta aqui, en su orden.
+    # RR-02 · Espacio existente y habilitado.
+    # Deshabilitado NO es lo mismo que en mantenimiento (RR-09): el primero no
+    # admite ninguna reserva, el segundo solo las franjas bloqueadas.
+    if estado.parametros is None or not estado.parametros.habilitado:
+        return Veredicto.rechaza("RR-02")
+
+    parametros = estado.parametros
+
+    # RR-03 · Rejilla, ventana y medianoche.
+    #
+    # La REJILLA ya la impone la canonizacion: una solicitud fuera de rejilla no
+    # llega a existir como Solicitud (modelo, "no hay clave aproximada"). El
+    # caso R-07 del banco se cierra en esa frontera, no aqui, y **se declara**
+    # en vez de fingir que esta regla lo atrapa.
+    #
+    # Lo que si se comprueba aqui: que TODAS las franjas caen dentro de la
+    # ventana del espacio, y que la reserva no cruza la medianoche.
+    ultima_hora = solicitud.inicio.hour + solicitud.n_franjas
+    if solicitud.inicio.hour < parametros.apertura or ultima_hora > parametros.cierre:
+        return Veredicto.rechaza("RR-03")
+    if ultima_hora > 24:
+        return Veredicto.rechaza("RR-03")
+
+    # RR-04 · Duracion permitida, ambos limites inclusive.
+    # Cero franjas tampoco llega hasta aqui: Solicitud lo rechaza al construirse.
+    if not (
+        parametros.duracion_minima <= solicitud.n_franjas <= parametros.duracion_maxima
+    ):
+        return Veredicto.rechaza("RR-04")
+
+    # RR-05 · Antelacion minima, limite INCLUSIVO.
+    # Va despues de RR-03 a proposito: el caso L-08 del banco es un limite de
+    # antelacion exacto que cae FUERA de la ventana, y el banco declara que debe
+    # informarse RR-03, no RR-05. El orden es lo que produce esa respuesta.
+    horas_de_antelacion = (solicitud.inicio - instante_ref).total_seconds() / 3600.0
+    if horas_de_antelacion < parametros.antelacion_minima_horas:
+        return Veredicto.rechaza("RR-05")
+
+    # RR-06 · Horizonte maximo, en dias de calendario y limite INCLUSIVO.
+    # En dias y no en horas: el banco lo enuncia sobre la FECHA de inicio.
+    dias_de_horizonte = (solicitud.inicio.date() - instante_ref.date()).days
+    if dias_de_horizonte > parametros.horizonte_maximo_dias:
+        return Veredicto.rechaza("RR-06")
 
     # RR-07 · Cupo por unidad.
     # La lectura solo atribuye; quien decide es la condicion del contador dentro

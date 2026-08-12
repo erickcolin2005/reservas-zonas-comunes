@@ -99,15 +99,26 @@ def test_rr10_por_solapamiento_en_sus_cuatro_formas():
             TipoOcupacion.RESERVA, "r1", "U-105"
         ),
     }
-    for hora, franjas, forma in [
-        (12, 2, "identico"),
-        (12, 1, "contencion"),
-        (13, 2, "parcial por la cola"),
-        (11, 2, "parcial por la cabeza"),
-        (11, 4, "continencia"),
+    # CORREGIDO EN I-4, y el motivo importa mas que la correccion:
+    #
+    # Las cinco formas se probaban sobre E-SAL con duraciones de 1, 2 y 4
+    # franjas. **E-SAL exige un minimo de 4**, asi que tres de las cinco
+    # solicitudes eran ilegales por duracion. El test pasaba porque RR-04 no
+    # existia todavia; en cuanto se implemento, la primera forma devolvio RR-04.
+    #
+    # Estaba verde POR LA AUSENCIA de una regla, no por la presencia de la que
+    # decia comprobar. El banco no comete ese error: usa E-CAN (min 1, max 2)
+    # para las cuatro formas cortas y E-SAL solo para la continencia, que si
+    # necesita 4 franjas. Se adopta su eleccion.
+    for espacio, params, hora, franjas, forma in [
+        ("E-CAN", E_CAN, 12, 2, "identico"),
+        ("E-CAN", E_CAN, 12, 1, "contencion"),
+        ("E-CAN", E_CAN, 13, 2, "parcial por la cola"),
+        ("E-CAN", E_CAN, 11, 2, "parcial por la cabeza"),
+        ("E-SAL", E_SAL, 11, 4, "continencia"),
     ]:
-        s = Solicitud("U-101", "E-SAL", instante_local(2026, 9, 11, hora), franjas)
-        v = reglas.evaluar(s, EstadoLeido(E_SAL, U101, ocupacion=ocupada), T0)
+        s = Solicitud("U-101", espacio, instante_local(2026, 9, 11, hora), franjas)
+        v = reglas.evaluar(s, EstadoLeido(params, U101, ocupacion=ocupada), T0)
         assert v.regla == "RR-10", forma
 
 
@@ -188,24 +199,34 @@ def test_menor_regla_gana_entre_condiciones_fallidas():
 # ---------------------------------------------------------------------------
 
 
-def test_las_seis_primeras_reglas_estan_registradas_pero_vacias():
-    """Registrarlas vacias en su sitio es mas honesto que no registrarlas: el
-    hueco se ve, y I-4 rellena el cuerpo sin tocar el orden."""
-    assert reglas.PENDIENTES_I4 == ("RR-01", "RR-02", "RR-03", "RR-04", "RR-05", "RR-06")
-    assert reglas.ORDEN_CREACION[:6] == reglas.PENDIENTES_I4
+def test_el_orden_de_creacion_esta_cubierto_entero_y_no_queda_ningun_hueco():
+    """En I-1 esta prueba afirmaba que RR-01..RR-06 estaban registradas y VACIAS:
+    el hueco se veia, y verlo era el punto. **I-4 lo cierra**, asi que ahora
+    afirma lo contrario -no queda ninguna pendiente- y conserva lo que si sigue
+    valiendo: que las tres tuplas cubren el orden de creacion ENTERO.
+
+    Esa ultima comprobacion es la que sobrevive a los dos incrementos. Si manana
+    se anadiera una regla al orden y nadie la implementara, no haria falta que
+    alguien se acordara de escribir una prueba: esta se pondria roja sola."""
+    assert reglas.PENDIENTES_I4 == (), "I-4 no dejo ninguna regla sin cuerpo"
+    assert reglas.IMPLEMENTADAS_I4 == ("RR-01", "RR-02", "RR-03", "RR-04", "RR-05", "RR-06")
+    assert reglas.ORDEN_CREACION[:6] == reglas.IMPLEMENTADAS_I4
     assert set(reglas.IMPLEMENTADAS_I1) == {"RR-07", "RR-08", "RR-09", "RR-10"}
     assert (
         set(reglas.PENDIENTES_I4)
         | set(reglas.IMPLEMENTADAS_I1)
+        | set(reglas.IMPLEMENTADAS_I4)
         | set(reglas.SOLO_CONDICION)
     ) == set(reglas.ORDEN_CREACION)
 
 
-def test_una_precondicion_ausente_no_fabrica_un_veredicto():
-    """Sin espacio no hay RR-02 que devolver: RR-02 es de I-4. Se levanta una
-    excepcion en vez de inventar un veredicto, porque un veredicto inventado
-    aqui pasaria por bueno en el CI."""
-    with pytest.raises(reglas.PrecondicionAusente):
-        reglas.evaluar(solicitud(), EstadoLeido(None, U101), T0)
-    with pytest.raises(reglas.PrecondicionAusente):
-        reglas.evaluar(solicitud(), EstadoLeido(E_CAN, None), T0)
+def test_la_ausencia_de_espacio_o_unidad_ya_tiene_regla_en_i4():
+    """En I-1 esto levantaba PrecondicionAusente: no habia RR-01 ni RR-02 que
+    devolver, y **inventar un veredicto habria pasado por bueno en el CI**.
+
+    I-4 les da cuerpo, y la ausencia deja de ser una precondicion rota para ser
+    el desenlace correcto: una unidad que no existe se rechaza igual que una
+    inactiva (RR-01), y un espacio que no existe igual que uno deshabilitado
+    (RR-02). Que las dos ramas coincidan es el requisito RF-17, no un atajo."""
+    assert reglas.evaluar(solicitud(), EstadoLeido(E_CAN, None), T0).regla == "RR-01"
+    assert reglas.evaluar(solicitud(), EstadoLeido(None, U101), T0).regla == "RR-02"
