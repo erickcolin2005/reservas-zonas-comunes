@@ -1,0 +1,43 @@
+CE-4 — consumo por solicitud, medido contra el motor real
+======================================================================
+Fecha: 2026-08-12T04:51:45+00:00
+
+  Medido, no estimado: las cifras las devuelve el motor en
+  ReturnConsumedCapacity. Se toma el PEOR caso de 5 reservas, no la
+  media: para acotar hace falta el peor observado.
+
+  UNA reserva confirmada consume:
+    escritura ....... 8.0 WCU
+    lectura ......... 5.0 RCU
+    llamadas ........ {'get_item': 3, 'query': 2, 'transact_write_items': 1}
+
+----------------------------------------------------------------------
+LO QUE ESO ACOTA
+----------------------------------------------------------------------
+
+  Capacidad aprovisionada: 25 WCU / 25 RCU (free tier).
+  Tasa sostenida sin estrangular: ~3.1 reservas/segundo.
+
+  M2-INS — el instrumento (>=50 solicitudes por ejecucion):
+    una ejecucion consume ~400 WCU de golpe, muy por encima de
+    los 25 sostenidos. **Cabe por el deposito de rafaga, no por la
+    capacidad**, y V-8 midio que el deposito se agota: sobre 5 WCU
+    estrangulo tras 2.176 escrituras.
+
+  M7 — la prueba de carga: su presupuesto va en SOLICITUDES TOTALES y
+  no en duracion, que es lo que la hace acotable por adelantado.
+
+----------------------------------------------------------------------
+EL LIMITE QUE NO ES DYNAMODB
+----------------------------------------------------------------------
+
+  Lambda: 1,000,000 peticiones/mes gratis (perpetuo).
+  API Gateway: 1,000,000 llamadas/mes (oferta de 12 meses,
+  activa en Plan de Pago). **[NV] en ESTA cuenta**: la API de free tier
+  no devuelve registros hasta que haya uso.
+
+  A 50 solicitudes por ejecucion del instrumento, agotar el millon de
+  API Gateway exigiria 20,000 ejecuciones en un mes.
+  **No es el limite que aprieta.** El que aprieta es la capacidad
+  instantanea de DynamoDB, y su sintoma no es una factura: es
+  SYS-CAPACIDAD, que invalida la medicion.
