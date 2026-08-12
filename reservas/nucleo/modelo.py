@@ -193,3 +193,72 @@ class Veredicto:
     @staticmethod
     def acepta(intencion: IntencionEscritura) -> "Veredicto":
         return Veredicto(aceptada=True, intencion=intencion)
+
+
+# ---------------------------------------------------------------------------
+# I-4 · Flujo de CANCELACION y flujo de ADMINISTRACION
+# ---------------------------------------------------------------------------
+# Hasta I-4 el nucleo solo sabia crear. Estas piezas son las que RR-12..RR-15
+# necesitan, y ni una mas: se anaden por el caso de uso que las exige, no por
+# completar un modelo de dominio que nadie ha pedido.
+
+
+class EstadoReserva(str, Enum):
+    """Una reserva solo tiene dos estados, y la ausencia de un tercero importa.
+
+    No hay "expirada": una reserva pasada sigue siendo CONFIRMADA y lo que la
+    hace incancelable es RR-13, que mira el instante. Inventar un estado que
+    cambie solo por el paso del tiempo obligaria a alguien a escribirlo, y ese
+    alguien no existe en un sistema sin proceso de fondo.
+    """
+
+    CONFIRMADA = "confirmada"
+    CANCELADA = "cancelada"
+
+
+@dataclass(frozen=True)
+class ReservaLeida:
+    """Lo que se sabe de una reserva al ir a cancelarla.
+
+    `titular` es la unidad duena. **Es lo unico que decide RR-12**, y por eso
+    esta aqui y no se deduce de ningun otro sitio.
+    """
+
+    id: str
+    titular: str
+    espacio: str
+    inicio: datetime
+    n_franjas: int
+    estado: EstadoReserva = EstadoReserva.CONFIRMADA
+
+
+@dataclass(frozen=True)
+class PeticionCancelacion:
+    """Quien cancela y que cancela.
+
+    `es_administracion` no se deduce del identificador: llega como dato, igual
+    que los parametros del espacio. Deducirla de una cadena que empiece por
+    "ADM-" seria fijar en el codigo una convencion de datos.
+    """
+
+    id_reserva: str
+    quien: str
+    es_administracion: bool = False
+    motivo: str | None = None
+
+
+@dataclass(frozen=True)
+class PeticionBloqueo:
+    """Un bloqueo de mantenimiento sobre franjas contiguas de un espacio."""
+
+    espacio: str
+    inicio: datetime
+    n_franjas: int
+    motivo: str | None = None
+
+    @property
+    def franjas(self) -> tuple["Franja", ...]:
+        primera = self.inicio.hour
+        return tuple(
+            Franja(self.inicio.date(), primera + i) for i in range(self.n_franjas)
+        )

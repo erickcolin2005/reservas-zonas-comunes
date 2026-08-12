@@ -42,6 +42,11 @@ from datetime import datetime
 
 from .modelo import (
     EstadoLeido,
+    EstadoReserva,
+    ParametrosEspacio,
+    PeticionBloqueo,
+    PeticionCancelacion,
+    ReservaLeida,
     IntencionEscritura,
     Solicitud,
     TipoOcupacion,
@@ -204,3 +209,95 @@ def menor_regla(*reglas: str | None) -> str | None:
     if not candidatas:
         return None
     return min(candidatas, key=lambda r: ORDEN_CREACION.index(r))
+
+
+# ---------------------------------------------------------------------------
+# I-4 · Flujo de CANCELACION — RR-12 → RR-14
+# ---------------------------------------------------------------------------
+
+ORDEN_CANCELACION = ("RR-12", "RR-13", "RR-14")
+"""El orden vuelve a ser el numero, y aqui decide un caso concreto del banco:
+R-30 viola RR-13 y RR-14 a la vez, y el banco declara que debe informarse
+RR-13. Sin orden, dos ejecuciones del mismo caso podrian informar reglas
+distintas y el banco dejaria de ser verificable."""
+
+
+def evaluar_cancelacion(
+    peticion: PeticionCancelacion,
+    reserva: ReservaLeida | None,
+    parametros: ParametrosEspacio | None,
+    instante_ref: datetime,
+) -> Veredicto:
+    """Evalua una cancelacion. Devuelve la PRIMERA regla violada.
+
+    `reserva=None` significa que el identificador no existe. **No es un error
+    de precondicion: es un caso del banco** (L-21), y su desenlace tiene que ser
+    exactamente el mismo que el de una reserva ajena (R-28).
+    """
+    # RR-12 · Titularidad.
+    #
+    # LAS DOS RAMAS COMPARTEN SALIDA A PROPOSITO, y esto es lo que S-02 prueba:
+    # una reserva ajena y una inexistente producen el MISMO rechazo. Si se
+    # distinguieran, cancelar identificadores al azar diria cuales existen.
+    #
+    # La administracion esta exenta (RF-23): puede cancelar lo que no es suyo,
+    # que es justo lo que RR-15 necesita para tener salida.
+    if not peticion.es_administracion:
+        if reserva is None or reserva.titular != peticion.quien:
+            return Veredicto.rechaza("RR-12")
+    elif reserva is None:
+        # Ni siquiera la administracion puede cancelar lo que no existe.
+        return Veredicto.rechaza("RR-12")
+
+    # RR-13 · Estado cancelable. ANTES que RR-14 (banco §6, contradiccion 2).
+    if reserva.estado is not EstadoReserva.CONFIRMADA:
+        return Veredicto.rechaza("RR-13")
+    if reserva.inicio <= instante_ref:
+        return Veredicto.rechaza("RR-13")
+
+    # RR-14 · Plazo de cancelacion, limite INCLUSIVO. Administracion exenta.
+    if peticion.es_administracion:
+        return Veredicto(aceptada=True)
+    if parametros is None:
+        raise PrecondicionAusente(
+            f"no hay parametros de {reserva.espacio!r}: sin plazo no se puede "
+            "evaluar RR-14, y fabricar un veredicto aqui pasaria por bueno"
+        )
+    horas_antes = (reserva.inicio - instante_ref).total_seconds() / 3600.0
+    if horas_antes < parametros.plazo_cancelacion_horas:
+        return Veredicto.rechaza("RR-14")
+
+    return Veredicto(aceptada=True)
+
+
+# ---------------------------------------------------------------------------
+# I-4 · Flujo de ADMINISTRACION — RR-15 (y RR-02, que tambien lo gobierna)
+# ---------------------------------------------------------------------------
+
+
+def evaluar_bloqueo(
+    peticion: PeticionBloqueo,
+    parametros: ParametrosEspacio | None,
+    ocupacion: dict,
+) -> Veredicto:
+    """Evalua un bloqueo de mantenimiento.
+
+    **Un bloqueo nunca invalida en silencio una reserva ya confirmada**: si
+    solapa alguna, se rechaza con RR-15 y la administracion tiene que cancelarla
+    primero. Esa es la salida de la contradiccion, y existe porque RF-23 exime a
+    la administracion de RR-14: sin esa exencion, una reserva a menos de su
+    plazo de inicio dejaria el bloqueo imposible para siempre.
+    """
+    # RR-02 gobierna tambien este flujo (caso R-34 del banco): un espacio que no
+    # existe no se puede bloquear, y el rechazo es el mismo que en creacion.
+    if parametros is None or not parametros.habilitado:
+        return Veredicto.rechaza("RR-02")
+
+    # RR-15 · Solape con reservas CONFIRMADAS. Los bloqueos vigentes de otro
+    # mantenimiento no cuentan: solapar dos bloqueos no rompe ninguna promesa.
+    for franja in peticion.franjas:
+        ocupa = ocupacion.get(franja)
+        if ocupa is not None and ocupa.tipo is TipoOcupacion.RESERVA:
+            return Veredicto.rechaza("RR-15", franja)
+
+    return Veredicto(aceptada=True)
