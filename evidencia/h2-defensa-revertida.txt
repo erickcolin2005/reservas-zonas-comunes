@@ -27,7 +27,7 @@ MUTACION M-a · sin escritura condicional sobre el hueco
     S-1 max en vuelo a la vez ....... 50 de 50
     S-2 max ventanas solapadas ...... 50
     S-3 rechazos RR-11 .............. 0   <-- SIN evidencia directa de carrera
-    dispersion de la barrera ........ 52.12 ms
+    dispersion de la barrera ........ 112.26 ms
 
   I-1 CORRECCION (C1): VIOLADO -> BUILD EN ROJO
       - franja 2026-09-11 10:00: 50 confirmadas (maximo admitido 1) — ESTO ES UNA DOBLE RESERVA
@@ -51,14 +51,15 @@ MUTACION M-b · canonizacion de la clave en UTC
   confirmadas ....................... 2
 
   reparto por cubo de desenlace:
-    RR-11              48
+    RR-11              46
+    RR-10              2
     confirmada         2
 
   simultaneidad observada:
     S-1 max en vuelo a la vez ....... 50 de 50
-    S-2 max ventanas solapadas ...... 50
-    S-3 rechazos RR-11 .............. 48
-    dispersion de la barrera ........ 54.61 ms
+    S-2 max ventanas solapadas ...... 48
+    S-3 rechazos RR-11 .............. 46
+    dispersion de la barrera ........ 85.60 ms
 
   I-1 CORRECCION (C1): VIOLADO -> BUILD EN ROJO
       - franja 2026-09-11 10:00: 2 confirmadas (maximo admitido 1) — ESTO ES UNA DOBLE RESERVA

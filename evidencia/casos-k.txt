@@ -15,7 +15,7 @@ T0 derivado: 2026-09-07T09:00:00-05:00
     S-1 max en vuelo a la vez ....... 50 de 50
     S-2 max ventanas solapadas ...... 50
     S-3 rechazos RR-11 .............. 49
-    dispersion de la barrera ........ 64.04 ms
+    dispersion de la barrera ........ 119.64 ms
 
   I-1 CORRECCION (C1): OK
   I-2 VIVACIDAD: OK
@@ -35,7 +35,7 @@ T0 derivado: 2026-09-07T09:00:00-05:00
     S-1 max en vuelo a la vez ....... 2 de 2
     S-2 max ventanas solapadas ...... 2
     S-3 rechazos RR-11 .............. 1
-    dispersion de la barrera ........ 1.09 ms
+    dispersion de la barrera ........ 1.19 ms
 
   I-1 CORRECCION (C1): OK
   I-2 VIVACIDAD: OK
@@ -48,14 +48,15 @@ T0 derivado: 2026-09-07T09:00:00-05:00
   confirmadas ....................... 5
 
   reparto por cubo de desenlace:
-    RR-11              45
+    RR-11              44
     confirmada         5
+    RR-10              1
 
   simultaneidad observada:
     S-1 max en vuelo a la vez ....... 50 de 50
-    S-2 max ventanas solapadas ...... 50
-    S-3 rechazos RR-11 .............. 45
-    dispersion de la barrera ........ 55.63 ms
+    S-2 max ventanas solapadas ...... 49
+    S-3 rechazos RR-11 .............. 44
+    dispersion de la barrera ........ 136.47 ms
 
   I-1 CORRECCION (C1): OK
   I-2 VIVACIDAD: OK

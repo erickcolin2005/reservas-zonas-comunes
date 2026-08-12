@@ -65,6 +65,16 @@ jobs:
       - name: Suite completa
         run: python -m pytest -v
 
+      # M4 — la mutacion de las reglas. Va ANTES de H2 y sin docker a proposito:
+      # el nucleo es puro, asi que apagar una regla y ver caer el banco no
+      # necesita motor. Si esto pasara solo en la maquina de quien desarrolla,
+      # D-D no existiria para nadie mas.
+      #
+      # Criterio invertido: una mutacion que SOBREVIVE rompe el build, porque
+      # significa que ninguna prueba vigila esa regla.
+      - name: M4 — apagar cada regla y exigir que el banco caiga
+        run: python -m herramientas.m4_mutacion
+
       - name: H2 — la prueba sabe ponerse en rojo
         run: |
           docker run -d --name h2 -p 8000:8000 amazon/dynamodb-local:latest \

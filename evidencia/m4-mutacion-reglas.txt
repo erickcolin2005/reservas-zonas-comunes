@@ -1,0 +1,30 @@
+M4 — mutacion sistematica de las reglas del nucleo
+======================================================================
+
+  Se apaga cada regla y se exige que el banco caiga. Una mutacion que
+  sobrevive NO es un exito: significa que ninguna prueba vigila esa
+  regla, y rompe el build.
+
+  CONTROL sin mutar: 0 casos caidos (tiene que ser 0)
+
+  [ROJO  ] RR-01  caen sus 2: R-01, R-02
+  [ROJO  ] RR-02  caen sus 3: R-03, R-04, R-34 (y 47 de arrastre)
+  [ROJO  ] RR-03  caen sus 4: L-08, R-05, R-06, R-08
+  [ROJO  ] RR-04  caen sus 2: R-09, R-10
+  [ROJO  ] RR-05  caen sus 2: R-12, R-13
+  [ROJO  ] RR-06  caen sus 3: R-14, R-15, R-16
+  [ROJO  ] RR-07  caen sus 4: L-01, R-17, R-18, R-19
+  [ROJO  ] RR-08  caen sus 1: R-20
+  [ROJO  ] RR-09  caen sus 2: R-21, R-22
+  [ROJO  ] RR-10  caen sus 5: R-23, R-24, R-25, R-26, R-27
+  [ROJO  ] RR-12  caen sus 2: L-21, R-28
+  [ROJO  ] RR-13  caen sus 2: R-29, R-30
+  [ROJO  ] RR-14  caen sus 2: R-31, R-32
+  [ROJO  ] RR-15  caen sus 1: R-33
+
+======================================================================
+VEREDICTO M4: PASA — las 14 reglas del nucleo puro estan vigiladas. Apagar cualquiera rompe el banco.
+
+RR-11 no se muta aqui: es inalcanzable desde la lectura y vive en la
+condicion de escritura. Su mutacion es H2 (herramientas/sensibilidad.py),
+que necesita el motor. Entre las dos, las quince.

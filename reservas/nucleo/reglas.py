@@ -108,6 +108,7 @@ def evaluar(
     solicitud: Solicitud, estado: EstadoLeido, instante_ref: datetime
 ) -> Veredicto:
     """Evalua en orden numerico y devuelve la PRIMERA regla violada."""
+    # [M4:RR-01]
     # RR-01 · Unidad valida y activa.
     # Inexistente e inactiva producen el MISMO rechazo, a proposito: el sistema
     # no confirma ni desmiente que la unidad exista (RF-17). Que las dos ramas
@@ -115,6 +116,7 @@ def evaluar(
     if estado.unidad is None or not estado.unidad.activa:
         return Veredicto.rechaza("RR-01")
 
+    # [M4:RR-02]
     # RR-02 · Espacio existente y habilitado.
     # Deshabilitado NO es lo mismo que en mantenimiento (RR-09): el primero no
     # admite ninguna reserva, el segundo solo las franjas bloqueadas.
@@ -123,6 +125,7 @@ def evaluar(
 
     parametros = estado.parametros
 
+    # [M4:RR-03]
     # RR-03 · Rejilla, ventana y medianoche.
     #
     # La REJILLA ya la impone la canonizacion: una solicitud fuera de rejilla no
@@ -138,6 +141,7 @@ def evaluar(
     if ultima_hora > 24:
         return Veredicto.rechaza("RR-03")
 
+    # [M4:RR-04]
     # RR-04 · Duracion permitida, ambos limites inclusive.
     # Cero franjas tampoco llega hasta aqui: Solicitud lo rechaza al construirse.
     if not (
@@ -145,6 +149,7 @@ def evaluar(
     ):
         return Veredicto.rechaza("RR-04")
 
+    # [M4:RR-05]
     # RR-05 · Antelacion minima, limite INCLUSIVO.
     # Va despues de RR-03 a proposito: el caso L-08 del banco es un limite de
     # antelacion exacto que cae FUERA de la ventana, y el banco declara que debe
@@ -153,12 +158,14 @@ def evaluar(
     if horas_de_antelacion < parametros.antelacion_minima_horas:
         return Veredicto.rechaza("RR-05")
 
+    # [M4:RR-06]
     # RR-06 · Horizonte maximo, en dias de calendario y limite INCLUSIVO.
     # En dias y no en horas: el banco lo enuncia sobre la FECHA de inicio.
     dias_de_horizonte = (solicitud.inicio.date() - instante_ref.date()).days
     if dias_de_horizonte > parametros.horizonte_maximo_dias:
         return Veredicto.rechaza("RR-06")
 
+    # [M4:RR-07]
     # RR-07 · Cupo por unidad.
     # La lectura solo atribuye; quien decide es la condicion del contador dentro
     # de la transaccion. Que esten los dos no es duplicidad: sin la lectura no
@@ -168,11 +175,13 @@ def evaluar(
     if estado.cupo_consumido >= estado.parametros.cupo:
         return Veredicto.rechaza("RR-07")
 
+    # [M4:RR-08]
     # RR-08 · Choque con reserva propia, aunque sea de otro espacio.
     for franja in solicitud.franjas:
         if franja in estado.agenda:
             return Veredicto.rechaza("RR-08", franja)
 
+    # [M4:RR-09]
     # RR-09 · Bloqueo por mantenimiento. Antes que RR-10: una franja bloqueada
     # no debe informarse como "ocupada por otro residente".
     for franja in solicitud.franjas:
@@ -180,6 +189,7 @@ def evaluar(
         if ocupacion is not None and ocupacion.tipo is TipoOcupacion.BLOQUEO:
             return Veredicto.rechaza("RR-09", franja)
 
+    # [M4:RR-10]
     # RR-10 · Solapamiento con reserva confirmada.
     # Con franjas, el solapamiento en sus cuatro formas es coincidencia de
     # clave. La adyacencia no comparte clave, luego no choca.
@@ -188,6 +198,7 @@ def evaluar(
         if ocupacion is not None and ocupacion.tipo is TipoOcupacion.RESERVA:
             return Veredicto.rechaza("RR-10", franja)
 
+    # [M4:FIN]
     # Ninguna violada: el nucleo devuelve una INTENCION, no una confirmacion.
     return Veredicto.acepta(
         IntencionEscritura(
@@ -234,6 +245,7 @@ def evaluar_cancelacion(
     de precondicion: es un caso del banco** (L-21), y su desenlace tiene que ser
     exactamente el mismo que el de una reserva ajena (R-28).
     """
+    # [M4:RR-12]
     # RR-12 · Titularidad.
     #
     # LAS DOS RAMAS COMPARTEN SALIDA A PROPOSITO, y esto es lo que S-02 prueba:
@@ -249,12 +261,14 @@ def evaluar_cancelacion(
         # Ni siquiera la administracion puede cancelar lo que no existe.
         return Veredicto.rechaza("RR-12")
 
+    # [M4:RR-13]
     # RR-13 · Estado cancelable. ANTES que RR-14 (banco §6, contradiccion 2).
     if reserva.estado is not EstadoReserva.CONFIRMADA:
         return Veredicto.rechaza("RR-13")
     if reserva.inicio <= instante_ref:
         return Veredicto.rechaza("RR-13")
 
+    # [M4:RR-14]
     # RR-14 · Plazo de cancelacion, limite INCLUSIVO. Administracion exenta.
     if peticion.es_administracion:
         return Veredicto(aceptada=True)
@@ -267,6 +281,7 @@ def evaluar_cancelacion(
     if horas_antes < parametros.plazo_cancelacion_horas:
         return Veredicto.rechaza("RR-14")
 
+    # [M4:FIN]
     return Veredicto(aceptada=True)
 
 
@@ -288,11 +303,13 @@ def evaluar_bloqueo(
     la administracion de RR-14: sin esa exencion, una reserva a menos de su
     plazo de inicio dejaria el bloqueo imposible para siempre.
     """
+    # [M4:RR-02]
     # RR-02 gobierna tambien este flujo (caso R-34 del banco): un espacio que no
     # existe no se puede bloquear, y el rechazo es el mismo que en creacion.
     if parametros is None or not parametros.habilitado:
         return Veredicto.rechaza("RR-02")
 
+    # [M4:RR-15]
     # RR-15 · Solape con reservas CONFIRMADAS. Los bloqueos vigentes de otro
     # mantenimiento no cuentan: solapar dos bloqueos no rompe ninguna promesa.
     for franja in peticion.franjas:
@@ -300,4 +317,5 @@ def evaluar_bloqueo(
         if ocupa is not None and ocupa.tipo is TipoOcupacion.RESERVA:
             return Veredicto.rechaza("RR-15", franja)
 
+    # [M4:FIN]
     return Veredicto(aceptada=True)
