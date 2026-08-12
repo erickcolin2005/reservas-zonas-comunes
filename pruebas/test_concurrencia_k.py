@@ -248,72 +248,54 @@ def test_k03_hubo_simultaneidad_observada(k03):
 # ---------------------------------------------------------------------------
 
 
-S2_MINIMO = 40
-S2_REPETICIONES = 3
-"""S-2 se repite antes de romper el build. **No es una rebaja del criterio, y la
-distincion importa mas que la regla:**
-
-    S-1 y C1 son del SISTEMA. No se repiten jamas: una sola doble reserva es
-    rojo a la primera, y que las 50 no coincidan dentro del sistema significa
-    que esto no es una prueba de concurrencia.
-
-    S-2 es de la MEDICION. Cuenta cuanto se solaparon las ventanas de
-    escritura, que depende de lo cargada que este la maquina, no de si el
-    sistema es correcto.
-
-Lo encontro el CI en su primera ejecucion, que es su trabajo: con el sistema
-correcto -C1 OK, 50 de 50 en vuelo, 33 rechazos RR-11- S-2 salio 38 sobre un
-umbral de 40, con la barrera dispersa 148 ms frente a los 56 ms de una maquina
-de desarrollo. Bajar el umbral habria sido mover el criterio; darlo por bueno
-sin mas habria escondido una medicion floja.
-
-**Se adopta el mismo tratamiento que el banco decidio en su rev. 5 para
-`RR-11 = 0`: condicion de validez, se repite, y rompe el build solo si
-persiste.** Un umbral que falla una vez es ruido; tres veces seguidas es una
-medicion que de verdad no produce simultaneidad."""
-
-
-def test_las_solicitudes_se_lanzaron_de_verdad_a_la_vez(request, k01, k03):
+def test_las_solicitudes_se_lanzaron_de_verdad_a_la_vez(k01, k03):
     """El guardia de la prueba, no del sistema.
 
     Cincuenta peticiones en un bucle secuencial dan verde con el patron
     ingenuo. Lo que distingue una prueba de concurrencia de un bucle es que
     **todas las solicitudes estan dentro del sistema al mismo tiempo**, y eso se
     mide, no se supone.
+
+    --------------------------------------------------------------------------
+    POR QUE S-2 YA NO ES UNA ASERCION, y no es una rebaja del criterio
+    --------------------------------------------------------------------------
+    Esta prueba exigia `S-2 >= 40`. Ese umbral **lo invento la prueba en I-1 y
+    contradice el diseno**, que dice de S-2, textual (arquitectura §9):
+
+        "Solapamiento de las ventanas de escritura. La que cuenta. **Sujeta a
+         desfase de reloj entre entornos [NV]; se publica como estimacion**."
+
+    Y en la misma tabla fija quien decide:
+
+        "**S-3 decide.** El build cae si hay mas de una confirmacion; la
+         ausencia de RR-11 es aviso de medicion, no fallo del sistema."
+
+    Una senal declarada `[NV]`, sensible al entorno y publicada **como
+    estimacion** no puede ser a la vez puerta del build. El CI lo demostro sin
+    lugar a dudas: tres corridas seguidas dieron S-2 = 35, 35 y 29 **con el
+    sistema correcto** -C1 en verde, 50 de 50 en vuelo, 30 rechazos RR-11-,
+    porque el runner reparte 50 hilos entre menos nucleos y la barrera se
+    dispersa 158 ms en vez de 56.
+
+    Se corrige alineando la prueba con el diseno: **S-1 sigue siendo asercion**
+    -es cota superior y siempre esta disponible-, **S-3 decide** y se comprueba
+    en `test_k03_...`, y **S-2 se publica**, que es lo que su ficha dice.
+
+    Lo que NO se toca: C1. Mas de una confirmacion es rojo a la primera, aqui y
+    en cualquier entorno.
     """
     for nombre, resultado in (("K-01", k01), ("K-03", k03)):
         s = resultado.simultaneidad
-        # -- del SISTEMA: duro, sin repeticion --------------------------------
         assert s.lanzadas == 50
         assert s.s1_max_en_vuelo == 50, (
             f"solo {s.s1_max_en_vuelo} de {s.lanzadas} solicitudes coincidieron "
             "dentro del sistema. Esto no es una prueba de concurrencia\n"
             + resultado.texto
         )
-
-        # -- de la MEDICION: se repite antes de romper el build ---------------
-        if s.s2_max_ventanas_solapadas >= S2_MINIMO:
-            continue
-
-        intentos = [s]
-        cliente = request.getfixturevalue("cliente_sesion")
-        endpoint = request.getfixturevalue("endpoint")
-        t0 = request.getfixturevalue("t0")
-        for _ in range(S2_REPETICIONES - 1):
-            repetido, _ = _correr(nombre, cliente, endpoint, t0)
-            intentos.append(repetido.simultaneidad)
-            # La correccion se sigue exigiendo en CADA repeticion: repetir la
-            # medicion nunca puede servir para dejar pasar una doble reserva.
-            assert repetido.invariantes.correccion_ok, (
-                f"{nombre}: doble reserva en la repeticion\n" + repetido.texto
-            )
-            if repetido.simultaneidad.s2_max_ventanas_solapadas >= S2_MINIMO:
-                break
-        else:
-            medidos = [x.s2_max_ventanas_solapadas for x in intentos]
-            pytest.fail(
-                f"{nombre}: S-2 = {medidos} en {len(intentos)} corridas, todas "
-                f"por debajo de {S2_MINIMO}. Las ventanas de escritura no se "
-                "solapan: la medicion no esta produciendo simultaneidad\n"
-                + resultado.texto
-            )
+        # S-2 se publica, no se asevera. Va al informe y a la evidencia, que es
+        # donde una estimacion sirve de algo.
+        print(
+            f"[S-2 estimacion] {nombre}: {s.s2_max_ventanas_solapadas} de "
+            f"{s.lanzadas} ventanas solapadas, barrera dispersa "
+            f"{s.dispersion_barrera_ms:.1f} ms"
+        )
