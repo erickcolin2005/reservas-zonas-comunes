@@ -15,7 +15,7 @@ T0 derivado: 2026-09-07T09:00:00-05:00
     S-1 max en vuelo a la vez ....... 50 de 50
     S-2 max ventanas solapadas ...... 50
     S-3 rechazos RR-11 .............. 49
-    dispersion de la barrera ........ 136.48 ms
+    dispersion de la barrera ........ 105.18 ms
 
   I-1 CORRECCION (C1): OK
   I-2 VIVACIDAD: OK
@@ -35,7 +35,7 @@ T0 derivado: 2026-09-07T09:00:00-05:00
     S-1 max en vuelo a la vez ....... 2 de 2
     S-2 max ventanas solapadas ...... 2
     S-3 rechazos RR-11 .............. 1
-    dispersion de la barrera ........ 2.01 ms
+    dispersion de la barrera ........ 2.29 ms
 
   I-1 CORRECCION (C1): OK
   I-2 VIVACIDAD: OK
@@ -55,7 +55,7 @@ T0 derivado: 2026-09-07T09:00:00-05:00
     S-1 max en vuelo a la vez ....... 50 de 50
     S-2 max ventanas solapadas ...... 50
     S-3 rechazos RR-11 .............. 45
-    dispersion de la barrera ........ 75.88 ms
+    dispersion de la barrera ........ 89.65 ms
 
   I-1 CORRECCION (C1): OK
   I-2 VIVACIDAD: OK

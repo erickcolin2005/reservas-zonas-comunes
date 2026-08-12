@@ -18,21 +18,22 @@ MUTACION M-a · sin escritura condicional sobre el hueco
 
   lanzadas .......................... 50
   competidoras efectivas ............ 50
-  confirmadas ....................... 50
+  confirmadas ....................... 47
 
   reparto por cubo de desenlace:
-    confirmada         50
+    confirmada         47
+    RR-10              3
 
   simultaneidad observada:
     S-1 max en vuelo a la vez ....... 50 de 50
-    S-2 max ventanas solapadas ...... 50
+    S-2 max ventanas solapadas ...... 47
     S-3 rechazos RR-11 .............. 0   <-- SIN evidencia directa de carrera
-    dispersion de la barrera ........ 101.34 ms
+    dispersion de la barrera ........ 148.16 ms
 
   I-1 CORRECCION (C1): VIOLADO -> BUILD EN ROJO
-      - franja 2026-09-11 10:00: 50 confirmadas (maximo admitido 1) — ESTO ES UNA DOBLE RESERVA
+      - franja 2026-09-11 10:00: 47 confirmadas (maximo admitido 1) — ESTO ES UNA DOBLE RESERVA
   I-2 VIVACIDAD: VIOLADO -> BUILD EN ROJO
-      - confirmadas totales = 50, y el caso declara 1. Un sistema que rechaza de mas satisface la correccion y no sirve para nada
+      - confirmadas totales = 47, y el caso declara 1. Un sistema que rechaza de mas satisface la correccion y no sirve para nada
   I-3 VALIDEZ DE LA MEDICION: OK
   avisos:
       - RR-11 = 0: la corrida no produjo evidencia directa de carrera. Es aviso de medicion (RF-14), no fallo del sistema
@@ -51,15 +52,15 @@ MUTACION M-b · canonizacion de la clave en UTC
   confirmadas ....................... 2
 
   reparto por cubo de desenlace:
-    RR-11              47
+    RR-11              46
+    RR-10              2
     confirmada         2
-    RR-10              1
 
   simultaneidad observada:
     S-1 max en vuelo a la vez ....... 50 de 50
-    S-2 max ventanas solapadas ...... 49
-    S-3 rechazos RR-11 .............. 47
-    dispersion de la barrera ........ 103.94 ms
+    S-2 max ventanas solapadas ...... 48
+    S-3 rechazos RR-11 .............. 46
+    dispersion de la barrera ........ 99.56 ms
 
   I-1 CORRECCION (C1): VIOLADO -> BUILD EN ROJO
       - franja 2026-09-11 10:00: 2 confirmadas (maximo admitido 1) — ESTO ES UNA DOBLE RESERVA
