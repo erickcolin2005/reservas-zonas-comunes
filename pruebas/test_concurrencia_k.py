@@ -248,7 +248,32 @@ def test_k03_hubo_simultaneidad_observada(k03):
 # ---------------------------------------------------------------------------
 
 
-def test_las_solicitudes_se_lanzaron_de_verdad_a_la_vez(k01, k03):
+S2_MINIMO = 40
+S2_REPETICIONES = 3
+"""S-2 se repite antes de romper el build. **No es una rebaja del criterio, y la
+distincion importa mas que la regla:**
+
+    S-1 y C1 son del SISTEMA. No se repiten jamas: una sola doble reserva es
+    rojo a la primera, y que las 50 no coincidan dentro del sistema significa
+    que esto no es una prueba de concurrencia.
+
+    S-2 es de la MEDICION. Cuenta cuanto se solaparon las ventanas de
+    escritura, que depende de lo cargada que este la maquina, no de si el
+    sistema es correcto.
+
+Lo encontro el CI en su primera ejecucion, que es su trabajo: con el sistema
+correcto -C1 OK, 50 de 50 en vuelo, 33 rechazos RR-11- S-2 salio 38 sobre un
+umbral de 40, con la barrera dispersa 148 ms frente a los 56 ms de una maquina
+de desarrollo. Bajar el umbral habria sido mover el criterio; darlo por bueno
+sin mas habria escondido una medicion floja.
+
+**Se adopta el mismo tratamiento que el banco decidio en su rev. 5 para
+`RR-11 = 0`: condicion de validez, se repite, y rompe el build solo si
+persiste.** Un umbral que falla una vez es ruido; tres veces seguidas es una
+medicion que de verdad no produce simultaneidad."""
+
+
+def test_las_solicitudes_se_lanzaron_de_verdad_a_la_vez(request, k01, k03):
     """El guardia de la prueba, no del sistema.
 
     Cincuenta peticiones en un bucle secuencial dan verde con el patron
@@ -256,15 +281,39 @@ def test_las_solicitudes_se_lanzaron_de_verdad_a_la_vez(k01, k03):
     **todas las solicitudes estan dentro del sistema al mismo tiempo**, y eso se
     mide, no se supone.
     """
-    for resultado in (k01, k03):
+    for nombre, resultado in (("K-01", k01), ("K-03", k03)):
         s = resultado.simultaneidad
+        # -- del SISTEMA: duro, sin repeticion --------------------------------
         assert s.lanzadas == 50
         assert s.s1_max_en_vuelo == 50, (
             f"solo {s.s1_max_en_vuelo} de {s.lanzadas} solicitudes coincidieron "
             "dentro del sistema. Esto no es una prueba de concurrencia\n"
             + resultado.texto
         )
-        assert s.s2_max_ventanas_solapadas >= 40, (
-            f"S-2 = {s.s2_max_ventanas_solapadas}: las ventanas de escritura "
-            "apenas se solaparon\n" + resultado.texto
-        )
+
+        # -- de la MEDICION: se repite antes de romper el build ---------------
+        if s.s2_max_ventanas_solapadas >= S2_MINIMO:
+            continue
+
+        intentos = [s]
+        cliente = request.getfixturevalue("cliente_sesion")
+        endpoint = request.getfixturevalue("endpoint")
+        t0 = request.getfixturevalue("t0")
+        for _ in range(S2_REPETICIONES - 1):
+            repetido, _ = _correr(nombre, cliente, endpoint, t0)
+            intentos.append(repetido.simultaneidad)
+            # La correccion se sigue exigiendo en CADA repeticion: repetir la
+            # medicion nunca puede servir para dejar pasar una doble reserva.
+            assert repetido.invariantes.correccion_ok, (
+                f"{nombre}: doble reserva en la repeticion\n" + repetido.texto
+            )
+            if repetido.simultaneidad.s2_max_ventanas_solapadas >= S2_MINIMO:
+                break
+        else:
+            medidos = [x.s2_max_ventanas_solapadas for x in intentos]
+            pytest.fail(
+                f"{nombre}: S-2 = {medidos} en {len(intentos)} corridas, todas "
+                f"por debajo de {S2_MINIMO}. Las ventanas de escritura no se "
+                "solapan: la medicion no esta produciendo simultaneidad\n"
+                + resultado.texto
+            )
