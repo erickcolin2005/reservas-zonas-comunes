@@ -75,6 +75,13 @@ jobs:
       - name: M4 — apagar cada regla y exigir que el banco caiga
         run: python -m herramientas.m4_mutacion
 
+      # Los dos mutantes de seguridad. security-agent los exige para G4, y van
+      # aparte de M4 a proposito: M4 muta las reglas de negocio, esto muta los
+      # controles. Protegen cosas distintas y una suite verde no dice nada de
+      # la otra.
+      - name: Mutantes de seguridad — apagar el autorizador y el contador
+        run: python -m herramientas.m4s_seguridad
+
       - name: H2 — la prueba sabe ponerse en rojo
         run: |
           docker run -d --name h2 -p 8000:8000 amazon/dynamodb-local:latest \
