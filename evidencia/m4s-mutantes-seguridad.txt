@@ -5,7 +5,7 @@ Los dos mutantes de seguridad — extension de M4 (SEC-1, SEC-2)
   significa que ningun test vigila ese control.
 
   CONTROL test_prestamo.py     20 passed in 0.03s
-  CONTROL test_contador.py     15 passed in 0.04s
+  CONTROL test_contador.py     15 passed in 0.02s
   CONTROL test_atender.py      27 passed in 0.04s
 
   [ROJO ] apagar el AUTORIZADOR   10 failed, 37 passed in 0.16s

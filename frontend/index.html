@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reservas de zonas comunes — demostración</title>
+
+<!--
+  Frontend deliberadamente minimo (D5), y SIN COMPILACION: un fichero, sin
+  empaquetador, sin dependencias. Se sirve tal cual desde S3.
+
+  Que sea minimo no es que sea descuidado. Tiene tres trabajos y ninguno mas:
+
+    1. RF-01 · ensenar los PARAMETROS de cada espacio antes de intentar nada,
+       para que un rechazo no sea una sorpresa sino algo que se veia venir.
+    2. MC-2 · avisar de que los datos son sinteticos, en el propio formulario.
+    3. C3 · ensenar la CAUSA de cada rechazo, con su regla, sin instrucciones
+       previas. Es H5: un extrano provoca un rechazo con causa y lo entiende.
+
+  ---------------------------------------------------------------------------
+  T-UX-17 — el criterio que ya se incumplio una vez
+  ---------------------------------------------------------------------------
+  "Ningun texto de la interfaz atribuye una causa que el sistema no pueda
+  sostener". No lo detecto una revision de diseno: lo detecto un cambio de
+  arquitectura que dejo falso un texto que llevaba una revision escrito.
+
+  El catalogo de mensajes redacta la zona 2 con DOS numeros -lo que pediste y
+  lo que cabe-: «El salon social se reserva con 72 horas de antelacion como
+  minimo. Para la hora que pediste faltan 41.»
+
+  **La segunda mitad no se puede escribir hoy, y por eso no esta.** El servidor
+  responde `regla` y nada mas: no manda un `mensaje` con las cifras -pregunta 4
+  del catalogo, ABIERTA- y D-UX-2 dice que la pantalla no las calcula. Escribir
+  «faltan 41» seria la interfaz afirmando mas de lo que sabe, que es
+  exactamente el fallo que este proyecto existe para denunciar.
+
+  Lo que si se puede decir es la mitad que sale de un dato declarado: los
+  parametros vienen de `GET /espacios`, que los lee de la tabla. Por eso los
+  mensajes de abajo solo interpolan campos de esa respuesta, y hay una prueba
+  -`test_frontend.py`- que falla si alguno interpola algo que la API no da.
+  Convierte la mitad numerica de T-UX-17 en algo automatico; la mitad en prosa
+  sigue siendo lectura contra el diseno, como advierte P-06.
+-->
+
+<script type="application/json" id="configuracion">
+{
+  "api": "",
+  "_api": "Base del API Gateway. La rellena el IaC al desplegar. Vacia = mismo origen."
+}
+</script>
+
+<!--
+  Los mensajes, en JSON y no incrustados en el codigo, para que la prueba pueda
+  leerlos sin ejecutar nada. Cada regla trae sus tres zonas; la cuarta -el
+  codigo- es la propia clave.
+
+  RR-10 y RR-11 son IDENTICOS salvo el codigo, y eso es RF-18 y la comprobacion
+  C-3 del catalogo. La frase natural para RR-11 -«alguien se te adelanto justo
+  ahora»- es FALSA en RR-10, donde la reserva rival podia llevar tres dias
+  confirmada. La interseccion de lo cierto en los dos casos es la que esta
+  escrita. Llevan codigos distintos porque el sistema tiene que poder demostrar
+  cual de las dos ocurrio.
+-->
+<script type="application/json" id="mensajes">
+{
+  "RR-01": {
+    "titular": "unidad no habilitada",
+    "porque": "La unidad con la que entraste no está habilitada para reservar zonas comunes.",
+    "que_hacer": "Esto no se resuelve desde aquí: lo revisa la administración del conjunto."
+  },
+  "RR-02": {
+    "titular": "espacio no disponible",
+    "porque": "{nombre} no está admitiendo reservas.",
+    "que_hacer": "Elige otro espacio."
+  },
+  "RR-03": {
+    "titular": "fuera del horario del espacio",
+    "porque": "{nombre} abre a las {apertura}:00 y cierra a las {cierre}:00.",
+    "que_hacer": "Elige horas dentro de ese rango."
+  },
+  "RR-04": {
+    "titular": "duración no permitida",
+    "porque": "{nombre} se reserva por bloques de {duracion_minima} a {duracion_maxima} horas.",
+    "que_hacer": "Ajusta la duración."
+  },
+  "RR-05": {
+    "titular": "te falta antelación",
+    "porque": "{nombre} se reserva con {antelacion_minima_horas} horas de antelación como mínimo.",
+    "que_hacer": "Elige un día más adelante."
+  },
+  "RR-06": {
+    "titular": "demasiado lejos en el tiempo",
+    "porque": "{nombre} se puede reservar hasta {horizonte_maximo_dias} días adelante.",
+    "que_hacer": "Elige un día más cercano."
+  },
+  "RR-07": {
+    "titular": "cupo agotado",
+    "porque": "Tu unidad ya agotó su cupo de {cupo} en {nombre} para este periodo.",
+    "que_hacer": "Cancela la que tienes o espera al periodo siguiente. Cambiar de hora no lo resuelve."
+  },
+  "RR-08": {
+    "titular": "se cruza con otra reserva tuya",
+    "porque": "Tu unidad ya tiene una reserva que se cruza con lo que pides.",
+    "que_hacer": "Cancela esa o elige horas que no se crucen."
+  },
+  "RR-09": {
+    "titular": "espacio en mantenimiento",
+    "porque": "Esas horas están bloqueadas por mantenimiento.",
+    "que_hacer": "Elige otras horas: en el calendario aparecen marcadas."
+  },
+  "RR-10": {
+    "titular": "ese horario ya está reservado",
+    "porque": "Alguien reservó esas horas antes que tú. El sistema no muestra quién.",
+    "que_hacer": "Elige otras horas. El calendario de abajo ya está actualizado."
+  },
+  "RR-11": {
+    "titular": "ese horario ya está reservado",
+    "porque": "Alguien reservó esas horas antes que tú. El sistema no muestra quién.",
+    "que_hacer": "Elige otras horas. El calendario de abajo ya está actualizado."
+  },
+  "SYS-CONTENCION": {
+    "titular": "no se pudo decidir a tiempo",
+    "porque": "Hubo mucha competencia por esas horas y tu solicitud no llegó a resolverse. La franja sigue libre.",
+    "que_hacer": "Vuelve a intentarlo."
+  },
+  "SYS-CAPACIDAD": {
+    "titular": "el sistema está al límite",
+    "porque": "La demostración corre con capacidad reservada pequeña y ahora mismo está saturada.",
+    "que_hacer": "Espera unos segundos y vuelve a intentarlo."
+  },
+  "SYS-IDENTIDAD": {
+    "titular": "no sabemos quién eres",
+    "porque": "Tu credencial de demostración no vale o caducó. Duran quince minutos.",
+    "que_hacer": "Pide una credencial nueva."
+  },
+  "SYS-TASA": {
+    "titular": "demasiados intentos",
+    "porque": "Esta unidad prestada agotó sus intentos en la ventana actual.",
+    "que_hacer": "Pide una credencial nueva o espera a la siguiente ventana."
+  }
+}
+</script>
+
+<style>
+  :root { color-scheme: light dark; --borde:#8884; --rojo:#b3261e; }
+  * { box-sizing: border-box; }
+  body { font: 16px/1.55 system-ui, sans-serif; margin: 0 auto; max-width: 46rem;
+         padding: 1.5rem 1rem 4rem; }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
+  .sub { opacity: .7; margin: 0 0 1.5rem; }
+  fieldset { border: 1px solid var(--borde); border-radius: .5rem; padding: 1rem;
+             margin: 0 0 1rem; }
+  legend { padding: 0 .4rem; font-weight: 600; }
+  label { display: block; margin: .6rem 0 .2rem; font-size: .9rem; }
+  select, input, button { font: inherit; padding: .45rem .6rem; border-radius: .35rem;
+                          border: 1px solid var(--borde); background: transparent;
+                          color: inherit; max-width: 100%; }
+  button { cursor: pointer; font-weight: 600; }
+  button[disabled] { opacity: .5; cursor: not-allowed; }
+  table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+  th, td { border: 1px solid var(--borde); padding: .35rem .5rem; text-align: left; }
+  .aviso { border: 2px solid var(--rojo); border-radius: .5rem; padding: .75rem 1rem;
+           margin: 0 0 1.5rem; }
+  .aviso strong { color: var(--rojo); }
+  .rejilla { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .5rem; }
+  .hora { border: 1px solid var(--borde); border-radius: .3rem; padding: .3rem .5rem;
+          font-size: .8rem; font-variant-numeric: tabular-nums; }
+  .hora.ocupada { opacity: .45; text-decoration: line-through; }
+  .hora.mantenimiento { opacity: .45; font-style: italic; }
+  #desenlace { border-left: 4px solid var(--borde); padding: .75rem 1rem; margin-top: 1rem; }
+  #desenlace.rechazada { border-left-color: var(--rojo); }
+  #desenlace .titular { font-weight: 700; text-transform: uppercase; font-size: .85rem;
+                        letter-spacing: .03em; }
+  #desenlace .codigo { font-family: ui-monospace, monospace; font-size: .8rem; opacity: .75;
+                       margin-top: .5rem; }
+  .sinteticos { font-size: .85rem; opacity: .8; }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<h1>Reservas de zonas comunes</h1>
+<p class="sub">Demostración. Cincuenta solicitudes simultáneas por la misma
+franja producen exactamente una confirmación.</p>
+
+<!-- MC-2 · el aviso va en el formulario, no en un pie de pagina que nadie lee. -->
+<div class="aviso">
+  <strong>Datos sintéticos.</strong>
+  Las unidades, los espacios y las reservas de esta demostración son inventados.
+  <span class="sinteticos">No corresponden a ninguna persona, vivienda ni conjunto
+  residencial real, y no se recoge ningún dato tuyo. La credencial que recibes es
+  un <em>préstamo</em> de una unidad ficticia y caduca a los quince minutos.</span>
+</div>
+
+<h2>1 · Los espacios y sus reglas</h2>
+<p class="sub">Los parámetros salen del sistema, no de esta página. Míralos antes
+de reservar: la mitad de los rechazos se ven venir aquí.</p>
+<div class="scroll"><table id="tabla-espacios">
+  <thead><tr>
+    <th>Espacio</th><th>Horario</th><th>Duración</th>
+    <th>Antelación</th><th>Horizonte</th><th>Cupo</th>
+  </tr></thead>
+  <tbody><tr><td colspan="6">Cargando…</td></tr></tbody>
+</table></div>
+
+<h2>2 · Tu credencial prestada</h2>
+<fieldset>
+  <legend>Identidad</legend>
+  <p class="sinteticos">No eliges unidad: el sistema te asigna una de un conjunto
+  cerrado. Es lo que hace que el tráfico máximo del sistema sea un número
+  calculable en vez de infinito.</p>
+  <button id="pedir">Pedir una credencial</button>
+  <p id="identidad" class="sinteticos"></p>
+</fieldset>
+
+<h2>3 · Reservar</h2>
+<fieldset>
+  <legend>Solicitud</legend>
+  <label for="espacio">Espacio</label>
+  <select id="espacio"></select>
+
+  <label for="dia">Día</label>
+  <input type="date" id="dia">
+
+  <label for="hora">Hora de inicio</label>
+  <input type="number" id="hora" min="0" max="23" value="10">
+
+  <label for="franjas">Duración (horas)</label>
+  <input type="number" id="franjas" min="1" max="12" value="1">
+
+  <p class="sinteticos" id="ocupacion-titulo"></p>
+  <div class="rejilla" id="ocupacion"></div>
+
+  <p><button id="reservar" disabled>Reservar</button></p>
+</fieldset>
+
+<div id="desenlace" hidden></div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const leerJson = (id) => JSON.parse($(id).textContent);
+
+  const CONFIG = leerJson("configuracion");
+  const MENSAJES = leerJson("mensajes");
+  const API = (CONFIG.api || "").replace(/\/$/, "");
+
+  let espacios = [];
+  let credencial = null;
+
+  const porId = (id) => espacios.find((e) => e.id === id) || {};
+
+  /* Sustituye {campo} por el valor del espacio. Si un campo no existe, se deja
+     el hueco tal cual y se nota: es preferible un texto roto y visible a un
+     texto que afirme un numero inventado. */
+  const rellenar = (plantilla, espacio) =>
+    plantilla.replace(/\{(\w+)\}/g, (hueco, campo) =>
+      espacio[campo] !== undefined ? espacio[campo] : hueco);
+
+  async function llamar(metodo, ruta, cuerpo) {
+    const opciones = { method: metodo, headers: {} };
+    if (cuerpo) {
+      opciones.headers["Content-Type"] = "application/json";
+      opciones.body = JSON.stringify(cuerpo);
+    }
+    if (credencial) opciones.headers["Authorization"] = `Bearer ${credencial.token}`;
+    const respuesta = await fetch(`${API}${ruta}`, opciones);
+    let datos = {};
+    try { datos = await respuesta.json(); } catch (_) { /* cuerpo vacio */ }
+    return { codigo: respuesta.status, datos };
+  }
+
+  function pintarEspacios() {
+    const cuerpo = $("tabla-espacios").querySelector("tbody");
+    cuerpo.innerHTML = "";
+    for (const e of espacios) {
+      const fila = cuerpo.insertRow();
+      const celdas = [
+        e.nombre,
+        `${e.apertura}:00 – ${e.cierre}:00`,
+        `${e.duracion_minima}–${e.duracion_maxima} h`,
+        `${e.antelacion_minima_horas} h mínimo`,
+        `${e.horizonte_maximo_dias} días`,
+        `${e.cupo} por ${e.tipo_periodo === "SEMANAL" ? "semana" : "mes"}`,
+      ];
+      for (const texto of celdas) fila.insertCell().textContent = texto;
+    }
+    $("espacio").innerHTML = espacios
+      .map((e) => `<option value="${e.id}">${e.nombre}</option>`).join("");
+  }
+
+  async function cargarEspacios() {
+    const { codigo, datos } = await llamar("GET", "/espacios");
+    if (codigo !== 200) return;
+    espacios = datos.espacios || [];
+    pintarEspacios();
+    await cargarOcupacion();
+  }
+
+  async function cargarOcupacion() {
+    const id = $("espacio").value, dia = $("dia").value;
+    if (!id || !dia) return;
+    const { codigo, datos } = await llamar(
+      "GET", `/espacios/${encodeURIComponent(id)}/disponibilidad?dia=${dia}`);
+    const rejilla = $("ocupacion");
+    rejilla.innerHTML = "";
+    if (codigo !== 200) { $("ocupacion-titulo").textContent = ""; return; }
+    $("ocupacion-titulo").textContent = "Ocupación de ese día:";
+    for (const f of datos.franjas || []) {
+      const celda = document.createElement("span");
+      celda.className = `hora ${f.estado === "libre" ? "" : f.estado}`;
+      /* El calendario dice que esta ocupada y NO dice por quien (S-03). */
+      celda.textContent = `${String(f.hora).padStart(2, "0")}:00`;
+      celda.title = f.estado;
+      rejilla.appendChild(celda);
+    }
+  }
+
+  function mostrar(codigo, datos) {
+    const panel = $("desenlace");
+    panel.hidden = false;
+    panel.className = "";
+    const espacio = porId($("espacio").value);
+
+    if (codigo === 200 && datos.resultado === "confirmada") {
+      panel.innerHTML = "";
+      const t = document.createElement("p");
+      t.className = "titular";
+      t.textContent = "Reserva confirmada";
+      const c = document.createElement("p");
+      c.className = "codigo";
+      c.textContent = `reserva ${datos.reserva}`;
+      panel.append(t, c);
+      cargarOcupacion();
+      return;
+    }
+
+    panel.className = "rechazada";
+    const clave = datos.regla || datos.resultado;
+    const mensaje = MENSAJES[clave];
+    panel.innerHTML = "";
+
+    const titular = document.createElement("p");
+    titular.className = "titular";
+    /* Sin mensaje conocido NO se inventa una causa: se dice que no se sabe.
+       Es T-UX-17 en el unico sitio donde puede fallar de verdad. */
+    titular.textContent = mensaje
+      ? `Reserva rechazada · ${mensaje.titular}`
+      : "Reserva rechazada";
+    panel.appendChild(titular);
+
+    if (mensaje) {
+      const porque = document.createElement("p");
+      porque.textContent = rellenar(mensaje.porque, espacio);
+      const queHacer = document.createElement("p");
+      queHacer.textContent = mensaje.que_hacer;
+      panel.append(porque, queHacer);
+    } else {
+      const desconocido = document.createElement("p");
+      desconocido.textContent =
+        "El sistema rechazó la solicitud y esta página no sabe explicar por qué. " +
+        "El código de abajo es lo único que puede afirmar.";
+      panel.appendChild(desconocido);
+    }
+
+    const codigoRegla = document.createElement("p");
+    codigoRegla.className = "codigo";
+    codigoRegla.textContent = `regla ${clave}`;
+    panel.appendChild(codigoRegla);
+
+    if (clave === "SYS-IDENTIDAD" || clave === "SYS-TASA") {
+      credencial = null;
+      $("identidad").textContent = "Sin credencial.";
+      $("reservar").disabled = true;
+    }
+  }
+
+  $("pedir").addEventListener("click", async () => {
+    $("pedir").disabled = true;
+    const { codigo, datos } = await llamar("POST", "/demo/credenciales", { cantidad: 1 });
+    $("pedir").disabled = false;
+    if (codigo === 200 && (datos.credenciales || []).length) {
+      credencial = datos.credenciales[0];
+      $("identidad").textContent =
+        `Te prestamos la unidad ${credencial.unidad}. Es ficticia y caduca en 15 minutos.`;
+      $("reservar").disabled = false;
+      return;
+    }
+    /* El enfriamiento NO es un fallo del sistema, y no se presenta como tal. */
+    $("identidad").textContent = datos.resultado === "enfriamiento"
+      ? "El sistema se está enfriando entre ejecuciones para no agotar su capacidad. Espera unos segundos."
+      : "Ahora mismo no hay credenciales disponibles. Inténtalo en un momento.";
+  });
+
+  $("reservar").addEventListener("click", async () => {
+    $("reservar").disabled = true;
+    const dia = $("dia").value;
+    const hora = String($("hora").value).padStart(2, "0");
+    const { codigo, datos } = await llamar("POST", "/reservas", {
+      espacio: $("espacio").value,
+      inicio: `${dia}T${hora}:00`,
+      n_franjas: Number($("franjas").value),
+    });
+    $("reservar").disabled = !credencial;
+    mostrar(codigo, datos);
+  });
+
+  $("espacio").addEventListener("change", cargarOcupacion);
+  $("dia").addEventListener("change", cargarOcupacion);
+
+  const manana = new Date(Date.now() + 86400000);
+  $("dia").value = manana.toISOString().slice(0, 10);
+  cargarEspacios();
+})();
+</script>
+</body>
+</html>
