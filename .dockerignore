@@ -1,0 +1,6 @@
+frontend/index.publicado.html
+.venv/
+.pytest_cache/
+__pycache__/
+evidencia/
+.git/

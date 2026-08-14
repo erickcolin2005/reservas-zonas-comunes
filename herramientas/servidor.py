@@ -1,15 +1,29 @@
-"""El sistema entero en una maquina, sin nube y sin cuenta de AWS.
+"""El sistema servido por HTTP, sin AWS. **El otro punto de entrada.**
 
-    python -m herramientas.servidor_local --sembrar
+    python -m herramientas.servidor --desarrollo --sembrar    # tu maquina
+    python -m herramientas.servidor --host 0.0.0.0            # desplegado
 
-Levanta el sustituto local en un contenedor, siembra los datos, y sirve en
-`http://localhost:8080` **la misma funcion que corre en Lambda** y la misma
-pagina que se sube a S3.
+Hay dos formas de arrancar este sistema y las dos componen las MISMAS
+dependencias y llaman al MISMO `manejar`:
 
-Existe por T7a y por CD2: el repositorio tiene que poder ejecutarse en la maquina
-de un desconocido, y el instrumento tiene que poder apuntarle. Sin esto, ver
-funcionar el sistema exige una cuenta de AWS — y pedirle eso a quien revisa el
-repositorio es pedirle demasiado.
+    reservas/entrada.py     -> Lambda, detras de API Gateway   (AWS)
+    herramientas/servidor.py-> un proceso HTTP                 (aqui)
+
+Existe por dos razones distintas y conviene no mezclarlas:
+
+  **T7a y CD2** — el repositorio tiene que poder ejecutarse en la maquina de un
+  desconocido. Sin esto, ver funcionar el sistema exige una cuenta de nube, y
+  pedirle eso a quien revisa el repositorio es pedirle demasiado.
+
+  **El argumento economico de §6.1 del README** — el instrumento es una
+  superficie de consumo abierta y anunciada a desconocidos. Con la cuenta de AWS
+  en Plan de Pago y cero creditos, dejar esa superficie viva y desatendida alli
+  es el riesgo que este proyecto describio como no acotable con codigo. La demo
+  publica vive aqui; AWS se usa en ventanas cortas y supervisadas.
+
+**Se llamaba `servidor_local.py` y el nombre dejo de ser cierto** en cuanto paso
+a servir la demo publica. Renombrado en vez de dejarlo: un fichero que se llama
+"local" y esta desplegado es la clase de texto falso que este proyecto persigue.
 
 ------------------------------------------------------------------------------
 ESTO NO ES API GATEWAY, Y LA DIFERENCIA IMPORTA
@@ -48,6 +62,7 @@ import secrets
 import socketserver
 import sys
 import threading
+import time
 import urllib.parse
 from datetime import datetime, timezone
 
@@ -58,6 +73,11 @@ from reservas.nucleo import tiempo
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
 PAGINA = RAIZ / "frontend" / "index.html"
+
+CUERPO_MAXIMO = 64 * 1024
+"""Tope del cuerpo de una peticion. API Gateway trae uno de serie; esto no
+traia ninguno. El cuerpo legitimo mas grande de este sistema es una reserva,
+que son unos cientos de bytes."""
 
 
 def casar_ruta(metodo: str, camino: str):
@@ -122,6 +142,16 @@ class Manejador(http.server.BaseHTTPRequestHandler):
             )
 
         longitud = int(self.headers.get("Content-Length") or 0)
+        if longitud > CUERPO_MAXIMO:
+            # **API Gateway trae un tope de 10 MB de serie; esto no traia
+            # ninguno.** Sin el, un desconocido anuncia un cuerpo de un giga y
+            # el proceso lo lee entero en memoria antes de que nadie mire si la
+            # peticion tiene sentido. El tope es holgado: el cuerpo legitimo mas
+            # grande de este sistema es una reserva, que son unos cientos de
+            # bytes.
+            return self._responder(
+                413, b'{"resultado":"peticion-mal-formada"}', "application/json"
+            )
         crudo = self.rfile.read(longitud).decode("utf-8") if longitud else None
         consulta = {
             k: v[0] for k, v in urllib.parse.parse_qs(partes.query).items()
@@ -165,6 +195,11 @@ class Manejador(http.server.BaseHTTPRequestHandler):
         camino = urllib.parse.urlsplit(self.path).path
         if camino in ("/", "/index.html"):
             return self._pagina()
+        if camino == "/salud":
+            # Para la sonda del alojamiento. **No toca el motor a proposito:**
+            # una sonda que leyera la tabla cada pocos segundos convertiria la
+            # vigilancia en consumo, que es justo lo que aqui se esta evitando.
+            return self._responder(200, b'{"estado":"vivo"}', "application/json")
         self._api("GET")
 
     def do_POST(self):
@@ -202,9 +237,30 @@ class Servidor(socketserver.ThreadingTCPServer):
     pruebas llaman a `atender` en proceso y nunca abren un socket."""
 
 
+def esperar_motor(cliente, segundos: float = 60.0) -> None:
+    """Espera a que el motor responda. **Hace falta en un contenedor.**
+
+    El proceso del sustituto y este arrancan a la vez, y el primero es una JVM:
+    tarda mas. Sin esta espera el servidor muere al arrancar con un error de
+    conexion, el alojamiento lo reinicia, y vuelve a pasar — un bucle de
+    reinicios cuya causa no se parece en nada a su sintoma.
+    """
+    limite = time.monotonic() + segundos
+    ultimo = None
+    while time.monotonic() < limite:
+        try:
+            cliente.list_tables(Limit=1)
+            return
+        except Exception as error:  # noqa: BLE001 - se reintenta a proposito
+            ultimo = error
+            time.sleep(1.0)
+    raise RuntimeError(f"el motor no respondio en {segundos:.0f} s: {ultimo!r}")
+
+
 def preparar(endpoint: str, sembrar: bool):
     """Cliente contra el sustituto, tabla creada y datos sembrados."""
     cliente = dynamodb.crear_cliente(endpoint)
+    esperar_motor(cliente)
     conjunto = None
     if sembrar:
         from reservas import sembrado
@@ -218,12 +274,24 @@ def preparar(endpoint: str, sembrar: bool):
 
 def main(argv=None) -> int:
     analizador = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    analizador.add_argument("--puerto", type=int, default=8080)
+    analizador.add_argument("--puerto", type=int, default=int(os.environ.get("PORT", 8080)))
+    analizador.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="127.0.0.1 por defecto. Un contenedor necesita 0.0.0.0, y hay que "
+        "escribirlo: escuchar en todas las interfaces es una decision",
+    )
     analizador.add_argument(
         "--endpoint", default=None, help="sustituto local; por defecto config.endpoint()"
     )
     analizador.add_argument("--sembrar", action="store_true")
     analizador.add_argument("--unidades", default=None, help="lista separada por comas")
+    analizador.add_argument(
+        "--desarrollo",
+        action="store_true",
+        help="rellena los parametros con valores de demostracion en vez de "
+        "exigirlos del entorno. **Solo para tu maquina.**",
+    )
     args = analizador.parse_args(argv)
 
     # **La guarda que hace segura esta herramienta.** Es un servidor de
@@ -251,35 +319,59 @@ def main(argv=None) -> int:
         )
         return 1
 
-    entorno = {
-        "RESERVAS_UNIDADES_ACTIVAS": activas,
-        "RESERVAS_ESPACIOS": "E-SAL,E-BBQ,E-CAN",
-        "RESERVAS_VENTANA_SEGUNDOS": "300",
-        "RESERVAS_TOPE_POR_IDENTIDAD": "5",
-        "RESERVAS_TOPE_POR_ORIGEN": "20",
-        "RESERVAS_CAPACIDAD_DEL_BORDE": str(len(activas.split(",")) * 5),
-        "RESERVAS_ENFRIAMIENTO_SEGUNDOS": os.environ.get(
-            "RESERVAS_ENFRIAMIENTO_SEGUNDOS", "20"
-        ),
-        "RESERVAS_ORIGEN_PERMITIDO": f"http://localhost:{args.puerto}",
-        "RESERVAS_CLAVE_FIRMA": secrets.token_urlsafe(48),
-    }
-    Manejador.dependencias = entrada.dependencias(entorno=entorno, cliente=cliente)
+    # -----------------------------------------------------------------------
+    # La configuracion sale del ENTORNO, igual que en Lambda. `--desarrollo`
+    # solo rellena los huecos que nadie quiere teclear en su maquina.
+    #
+    # El orden importa y es este a proposito: **lo que el entorno diga manda**.
+    # Si fuera al reves, desplegar con una variable mal puesta arrancaria con un
+    # valor de demostracion y pareceria configurado.
+    # -----------------------------------------------------------------------
+    demo = {}
+    if args.desarrollo:
+        n = len(activas.split(","))
+        demo = {
+            "RESERVAS_ESPACIOS": "E-SAL,E-BBQ,E-CAN",
+            "RESERVAS_VENTANA_SEGUNDOS": "300",
+            "RESERVAS_TOPE_POR_IDENTIDAD": "5",
+            "RESERVAS_TOPE_POR_ORIGEN": "20",
+            "RESERVAS_CAPACIDAD_DEL_BORDE": str(n * 5),
+            "RESERVAS_ENFRIAMIENTO_SEGUNDOS": "20",
+            "RESERVAS_ORIGEN_PERMITIDO": f"http://localhost:{args.puerto}",
+            # Clave nueva en cada arranque: en desarrollo no hay nada que
+            # conservar entre reinicios, y una clave fija en el codigo acabaria
+            # copiada a un despliegue.
+            "RESERVAS_CLAVE_FIRMA": secrets.token_urlsafe(48),
+        }
+    entorno = {**demo, **{k: v for k, v in os.environ.items() if v}}
+    entorno["RESERVAS_UNIDADES_ACTIVAS"] = activas
+
+    try:
+        Manejador.dependencias = entrada.dependencias(entorno=entorno, cliente=cliente)
+    except entrada.ConfiguracionIncompleta as error:
+        print(f"{error}\n", file=sys.stderr)
+        print(
+            "Si esto es tu maquina y no un despliegue, usa --desarrollo.",
+            file=sys.stderr,
+        )
+        return 1
 
     n = len(activas.split(","))
-    print(f"Sistema en http://localhost:{args.puerto}")
+    tope = int(entorno["RESERVAS_TOPE_POR_IDENTIDAD"])
+    print(f"Sistema escuchando en {args.host}:{args.puerto}")
     print(f"  motor .......... {endpoint}  (sustituto local, NUNCA AWS)")
+    print(f"  origen CORS .... {entorno['RESERVAS_ORIGEN_PERMITIDO']}")
     print(f"  identidades .... {n} en conjunto cerrado")
-    print(f"  tope ........... {entorno['RESERVAS_TOPE_POR_IDENTIDAD']} intentos "
-          f"por identidad y ventana -> techo {n * 5}")
+    print(f"  tope ........... {tope} intentos por identidad y ventana "
+          f"-> techo {n * tope}")
     print(f"  enfriamiento ... {entorno['RESERVAS_ENFRIAMIENTO_SEGUNDOS']} s entre "
           "ejecuciones del instrumento (D-CE4-1)")
     print()
     print(f"  el instrumento:  python -m herramientas.m2_instrumento "
           f"--url http://localhost:{args.puerto}")
-    print()
+    print(flush=True)
 
-    with Servidor(("127.0.0.1", args.puerto), Manejador) as servidor:
+    with Servidor((args.host, args.puerto), Manejador) as servidor:
         try:
             servidor.serve_forever()
         except KeyboardInterrupt:

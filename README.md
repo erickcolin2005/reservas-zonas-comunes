@@ -16,24 +16,31 @@ y a la misma hora?**
 La respuesta correcta es "acepta exactamente una". Este repositorio existe para
 que eso no sea una afirmación, sino algo que puedas intentar romper tú.
 
-> ## Estado: la carrera está cerrada. Nada más lo está.
+> ## Estado: la carrera está cerrada y ya la puedes provocar tú. Falta desplegar.
 >
 > **Este README se escribió antes de la primera línea de código, a propósito**, y
 > se actualiza cuando cambia lo que hay. No antes.
 >
-> **Lo que existe hoy y está medido** — contra un motor local, no contra la nube:
+> **Lo que existe hoy y está medido:**
 >
 > - El mecanismo que impide la doble reserva: el hueco **es** la clave, y la
->   unicidad la impone la clave primaria, no una comprobación previa.
+>   unicidad la impone la clave primaria, no una comprobación previa. **Verificado
+>   contra DynamoDB de verdad**, no solo contra el sustituto local.
 > - Una prueba que **produce concurrencia de verdad** —50 hilos con barrera de
 >   disparo— y que **mide y publica la simultaneidad que consiguió**, en vez de
 >   suponerla. Si no hubo solape real, la medición se declara inválida.
-> - **106 pruebas en verde**, y dos mutaciones que las ponen en rojo a propósito
->   (§3.1). Un verde solo demuestra algo si sabe ponerse rojo.
+> - **El comando con el que puedes provocar la carrera tú mismo** (§2), y el
+>   sistema entero corriendo en tu máquina sin cuenta de nube:
+>   `python -m herramientas.servidor --desarrollo --sembrar`.
+> - Las **quince reglas de negocio**, con su banco de casos, y una interfaz donde
+>   cada rechazo dice **qué regla** lo produjo.
+> - **392 pruebas en verde**, y tres suites de mutación que las ponen en rojo a
+>   propósito: las quince reglas, los dos controles de seguridad, y la condición
+>   de escritura (§3.1). Un verde solo demuestra algo si sabe ponerse rojo.
 >
-> **Lo que NO existe todavía:** API, interfaz, despliegue, demo, el comando con el
-> que un extraño provoque la carrera él mismo, las quince reglas de negocio
-> completas, y las cifras de rendimiento.
+> **Lo que NO existe todavía:** el despliegue, el enlace de la demo, la evidencia
+> visual grabada, y **las cifras de rendimiento** — que siguen sin medirse y por
+> eso siguen sin afirmarse.
 >
 > **Las tablas de §3 siguen vacías en las columnas que no se han medido**, y así
 > se quedan hasta que existan sus números — con los fallos dentro.
@@ -89,18 +96,31 @@ que se rechaza por la regla equivocada cuenta como fallo, no como acierto.
 
 ## 2 · Qué se va a poder comprobar, y quién lo comprueba
 
-Ninguna de estas siete conductas existe todavía. La columna de estado es la que
-dice la verdad hoy, y es la que va a ir cambiando.
+La columna de estado es la que dice la verdad hoy, y es la que va cambiando.
+*Actualizada el 2026-08-14.*
 
 | # | Conducta | Cómo se comprueba sin creerme nada | Estado |
 |---|---|---|---|
-| 1 | Peticiones simultáneas al mismo hueco → **exactamente una** confirmada; el resto rechazadas nombrando su regla | **Ejecutas tú el comando** que el repositorio va a entregar, contra el sistema desplegado | ⬜ No construido |
-| 2 | Una reserva que viola una regla → rechazo que dice **cuál** regla | Lo intentas en la demo, sin instrucciones | ⬜ No construido |
-| 3 | La prueba de concurrencia **rompe el build** ante una sola confirmación de más | Miras el historial de integración continua, no la prosa | ⬜ No construido |
-| 4 | **Apagar una regla a propósito tumba el build** | Miras la herramienta que las apaga, una por una | ⬜ No construido |
+| 1 | Peticiones simultáneas al mismo hueco → **exactamente una** confirmada; el resto rechazadas nombrando su regla | **Ejecutas tú el comando** contra el sistema, tuyo o desplegado | ✅ **Construido.** Falta el enlace público |
+| 2 | Una reserva que viola una regla → rechazo que dice **cuál** regla | Lo intentas en la interfaz, sin instrucciones | ✅ **Construido.** Falta el enlace público |
+| 3 | La prueba de concurrencia **rompe el build** ante una sola confirmación de más | Miras el historial de integración continua, no la prosa | ✅ En verde en cada empujón |
+| 4 | **Apagar una regla a propósito tumba el build** | Miras las herramientas que las apagan, una por una | ✅ Las quince reglas, y también los dos controles de seguridad |
 | 5 | Tabla de carga publicada **con los números reales, buenos o malos** | Lees §3 | ⬜ Sin medir |
 | 6 | **Arranque en frío declarado aparte**, no escondido dentro de un promedio | Lees §3 | ⬜ Sin medir |
-| 7 | Freno de gasto **probado** antes del primer recurso, caducidad declarada, y un comando que reconstruye el sistema entero | Lees §6 y §7, y el directorio de infraestructura | ⬜ No construido |
+| 7 | Freno de gasto **probado** antes del primer recurso, caducidad declarada, y un comando que reconstruye el sistema entero | Lees §6 y §7, y el directorio `infra/` | 🟡 **El freno, probado.** El IaC del borde, escrito y sin ejecutar |
+
+**Para la 1 y la 2 no hace falta esperar al enlace.** El sistema entero corre en
+tu máquina, sin cuenta de nube y sin registrarte en nada:
+
+```bash
+python -m herramientas.servidor --desarrollo --sembrar     # en una terminal
+python -m herramientas.m2_instrumento --url http://localhost:8080   # en otra
+```
+
+Lo segundo lanza cincuenta solicitudes simultáneas de cincuenta identidades
+distintas contra el mismo hueco, y te enseña el reparto entero. **Y si no
+consiguió provocar una carrera de verdad, te lo dice y se niega a publicar el
+resultado** — que es la parte que más me importa de esa herramienta.
 
 La 3 y la 4 son las que sostienen a todas las demás. Una prueba que nunca ha
 sabido ponerse en rojo no demuestra nada: solo genera confianza injustificada. Y
@@ -124,34 +144,46 @@ han medido siguen vacías y se nota.
 ### 3.1 · Concurrencia
 
 Cada fila se ejecuta por dos vías: dentro de la integración continua, donde una
-violación rompe el build, y contra el sistema desplegado, mediante el comando que
-cualquiera puede ejecutar. **Hoy solo existe la primera.**
+violación rompe el build, y **contra DynamoDB de verdad**, mediante el comando que
+cualquiera puede ejecutar. *Las cifras de abajo son las del motor real, y están en
+`evidencia/k-motor-real.txt`.*
 
-> **Salvedad que cambia lo que estos números prueban.** Se midieron contra un
-> **motor local**, no contra la nube. Un motor local es un solo proceso: serializa
-> más que el real, así que **no puede producir menos dobles reservas que él**. De
-> ahí la asimetría, y conviene tenerla clara: si aquí salieran dos confirmadas,
-> saldrían dos en la nube — **eso refutaría el diseño**. Que salga una **no
-> demuestra** que salga una en la nube. Esa confirmación exige el motor real, y
-> todavía no se ha hecho.
+> **Por qué hizo falta el motor real, y no bastaba el local.** El local es un solo
+> proceso: serializa más que el real, así que **no puede producir menos dobles
+> reservas que él**. La asimetría va en una sola dirección — si en local salieran
+> dos confirmadas, saldrían dos en la nube y **eso refutaría el diseño**; pero que
+> salga una en local **no demuestra** que salga una en la nube. Por eso la
+> confirmación exigía el motor real, y por eso se hizo. En esas corridas se
+> observó `TransactionConflict`, que es la ruta de código que el local **nunca**
+> ejercita.
 
-| Caso | Qué se lanza | Lanzadas | Compitieron de verdad | Confirmadas | Rechazadas nombrando su regla | Veredicto |
+| Caso | Qué se lanza | Lanzadas | Compitieron de verdad | Confirmadas | Evidencia directa de carrera | Veredicto |
 |---|---|---|---|---|---|---|
-| K-01 | 50 unidades distintas, **el mismo horario** | 50 | **50** | **1** | 49 · colisión | ✅ local |
-| K-02 | Dos reservas que **se solapan a medias** (10:00–14:00 y 12:00–16:00) | 2 | **2** | **1** | 1 · colisión | ✅ local |
-| K-03 | 50 peticiones repartidas entre **cinco horarios** del mismo día | 50 | **50** | **5** | 45 · colisión | ✅ local |
+| K-01 | 50 unidades distintas, **el mismo horario** | 50 | **50 de 50** | **1** | 49 · perdieron la condición de escritura | ✅ **motor real** |
+| K-02 | Dos reservas que **se solapan a medias** (10:00–14:00 y 12:00–16:00) | 2 | **2 de 2** | **1** | 1 | ✅ **motor real** |
+| K-03 | 50 peticiones repartidas entre **cinco horarios** del mismo día | 50 | **50 de 50** | **5** | 45 | ✅ **motor real** |
+| K-05 | Cuatro peticiones de la misma unidad en cuatro horarios, con **cupo de tres** | 4 | **4 de 4** | **3** | **0 — ver abajo** | ✅ **motor real**, con salvedad |
 | K-04 | Dos peticiones de **la misma unidad** por el mismo horario | | | | | sin medir |
-| K-05 | Cuatro peticiones de la misma unidad en cuatro horarios, con **cupo de tres** | | | | | sin medir |
 | K-06 | Una reserva y **una cancelación** del mismo horario, a la vez | | | | | sin medir |
 | K-07 | 50 peticiones sobre un horario **bloqueado por mantenimiento** | | | | | sin medir |
 
-**La simultaneidad no se supone, se mide.** En K-01 las 50 peticiones estuvieron
-en vuelo a la vez —50 de 50, contadas— y la dispersión de la barrera de disparo
-fue de **63 a 87 ms**, que se publica aunque no haga falta: en una máquina más
-lenta podría morder, y entonces el número que hay que corregir es el de
-peticiones, no el criterio. La propia prueba lleva un guardia que comprueba que
-**un bucle secuencial da solape 1** — si el medidor no sabe detectar la ausencia
-de concurrencia, no sirve para afirmar su presencia.
+**La salvedad de K-05 se publica porque es la que más tienta a callar.** Salió
+correcta —tres confirmadas, el cupo respetado, las tres invariantes en verde— y
+aun así **cero rechazos por pérdida de la condición de escritura**, que es la
+única señal inmune al reloj. Las cuatro peticiones eran de la misma unidad y por
+horarios distintos: no disputaban ninguna franja entre sí, así que el cupo se
+resolvió por el contador de la transacción y no hubo carrera de franja que
+observar. **El resultado vale; la corrida no demuestra concurrencia por sí sola.**
+Escribirlo como un ✅ a secas habría sido la clase de redondeo que este documento
+existe para no hacer.
+
+**La simultaneidad no se supone, se mide.** En K-01 contra el motor real las 50
+peticiones estuvieron en vuelo a la vez —50 de 50, contadas— y la dispersión de
+la barrera de disparo fue de **85 ms**, que se publica aunque no haga falta: en
+una máquina más lenta podría morder, y entonces el número que hay que corregir es
+el de peticiones, no el criterio. La propia prueba lleva un guardia que comprueba
+que **un bucle secuencial da solape 1** — si el medidor no sabe detectar la
+ausencia de concurrencia, no sirve para afirmar su presencia.
 
 **Dos mutaciones, y las dos ponen el build en rojo:**
 
@@ -282,17 +314,71 @@ no al final.
 
 ## 6 · Esta demo va a caducar, y se sabe desde antes de existir
 
-La cuenta de AWS de este proyecto se abre en el **Plan Gratuito**. Eso significa
-dos cosas, y las dos van dichas de frente:
+> ### ⚠️ Corregido el 2026-08-14 — lo que decía aquí era falso
+>
+> Esta sección afirmaba que la cuenta estaba en **Plan Gratuito** y que por tanto
+> *«AWS no puede cobrarme»* y *«la cuenta vive seis meses»*. **Las tres cosas son
+> falsas para esta cuenta.**
+>
+> Al abrirla y consultarla con `freetier:GetAccountPlanState`, resultó estar en
+> **Plan de Pago**, sin fecha de caducidad y con **cero créditos** — la decisión
+> de abrirla en el gratuito se tomó y no se aplicó, y nadie lo habría sabido sin
+> comprobarlo. El FAQ oficial es literal: no se puede degradar.
+>
+> **Se deja el error escrito en vez de reescribir la sección en limpio.** Un
+> proyecto que existe para denunciar afirmaciones sin medir no puede borrar las
+> suyas: esto es un texto que llevaba semanas siendo falso porque un cambio de
+> premisa no se propagó, que es exactamente el fallo que aquí se persigue.
 
-- **AWS no puede cobrarme:** cuando se acaban los créditos, apaga en vez de
-  facturar. No hay factura sorpresa posible.
-- **La cuenta vive seis meses desde el registro.** Después AWS la cierra, retiene
-  el contenido 90 días y luego lo borra para siempre.
+Lo que es cierto hoy:
 
-O sea que **el enlace de la demo se va a morir**, y se sabe antes de publicarlo.
-Un enlace muerto en un README es peor que no tener enlace, así que la demo no es
-el entregable:
+- **AWS sí puede facturar.** No hay apagado automático que sustituya al
+  guardarraíl, así que **el guardarraíl es lo único que hay** — y por eso se monta
+  antes que ningún otro recurso, con acción de denegación y umbral de 5 USD.
+- **La cuenta no caduca.** Desaparece el reloj de seis meses, y con él la
+  restricción que gobernaba el plan entero.
+- **El gasto esperado sigue siendo cero, pero por una sola razón y no por dos:**
+  los límites del *free tier*, no los créditos. Y eso cambia cómo se puede
+  escribir: **«cero porque el uso se queda bajo los límites del free tier»**,
+  nunca «cero garantizado por contrato». Son cosas distintas y este repositorio
+  no puede confundirlas.
+
+### 6.1 · Dónde vive la demo pública, y por qué no en AWS
+
+**La demo pública no se aloja en la cuenta de AWS, y la razón es económica, no
+técnica.** El instrumento de §2 es una superficie de consumo **abierta y
+anunciada a desconocidos**: un comando que invita a cualquiera a lanzar cincuenta
+solicitudes simultáneas, en bucle si quiere.
+
+El análisis de costos de este proyecto concluyó que esa superficie era asumible
+**porque la cuenta apagaba en vez de cobrar**. Con la cuenta en Plan de Pago y
+cero créditos, esa premisa desapareció — y con ella, el argumento. Dejar una
+superficie así anunciada y desatendida sobre una cuenta que puede facturar es
+precisamente el riesgo que este proyecto describió como **no acotable con
+código**.
+
+Así que se parte en dos, y el corte va donde está el riesgo:
+
+| | Dónde | Por qué |
+|---|---|---|
+| **La demo que se enlaza** | Fuera de AWS, en un servidor propio | Es lo que queda vivo y desatendido. Ahí el peor caso es perder la demo, no recibir una factura |
+| **El despliegue en AWS** | En la cuenta, en una ventana **corta y supervisada** | Es donde se captura la evidencia grabada y donde se prueba el freno. Con el instrumento en mis manos, no en las de un desconocido en bucle |
+
+**Lo que se pierde diciéndolo:** la demo que puedes tocar no corre sobre
+DynamoDB, sino sobre su sustituto local. **Lo que no se pierde:** el mecanismo
+está medido contra DynamoDB de verdad —esa medición es la que respalda la
+afirmación de §3— y el IaC que levanta el sistema entero en AWS está en `infra/`
+y se ejecuta con un comando.
+
+Que el mismo código corra en los dos sitios sin tocar el núcleo no es casualidad:
+es lo que compra la frontera de `reservas/adaptadores/`, y es la única parte de
+este README que la justifica de verdad.
+
+---
+
+O sea que **el enlace de la demo se va a morir de todas formas**, y se sabe antes
+de publicarlo. Un enlace muerto en un README es peor que no tener enlace, así que
+la demo no es el entregable:
 
 > El entregable es **la infraestructura como código que levanta el sistema entero
 > con un comando en una cuenta limpia**, más la evidencia grabada del sistema
@@ -317,14 +403,22 @@ abrir la cuenta, no se recuerda de memoria.
 **AWS ya no da el free tier de 12 meses a las cuentas nuevas.** Lo reemplazó por
 un modelo de créditos con dos planes: uno gratuito, que apaga la cuenta cuando se
 agotan los créditos o a los seis meses, y uno de pago, que sigue abierto y cobra
-tarifa estándar. Este proyecto elige el gratuito: prioriza riesgo de cobro cero
-sobre permanencia de la cuenta.
+tarifa estándar.
+
+> **Corrección del 2026-08-14.** Aquí decía *«este proyecto elige el gratuito:
+> prioriza riesgo de cobro cero sobre permanencia de la cuenta»*. Se eligió, sí,
+> **y no se aplicó**: la cuenta quedó en Plan de Pago (§6). La frase describía una
+> decisión, no un hecho, y llevaba semanas leyéndose como lo segundo.
+>
+> Lo que se gana con el plan de pago, y no es menor: **API Gateway y S3 recuperan
+> su año gratis**, que solo está activo ahí. Lo que se pierde es el amortiguador,
+> que era justamente lo que sostenía el argumento de §6.1.
 
 Tres hechos que cambiaron decisiones de diseño, no solo el presupuesto:
 
 | Hecho verificado | Qué obligó a cambiar |
 |---|---|
-| **El free tier de 12 meses de API Gateway es una oferta de plazo limitado, y en el Plan Gratuito no está activa.** Cada llamada sale de los créditos | A este volumen de tráfico son centavos, así que los créditos no son la restricción. **Lo que se agota es el plazo**, y optimizar créditos sería optimizar la variable que no ata |
+| **El free tier de API Gateway es una oferta de plazo limitado**, no perpetua. En Plan Gratuito no está activa; en Plan de Pago sí | Motivó aislar API Gateway tras un adaptador desde el primer día. **Y la cuenta acabó en Plan de Pago**, así que el año gratis está activo — la decisión se mantiene, pero ya no por longevidad de la cuenta, sino porque separar la lógica de su transporte es lo que permite que el mismo código corra en AWS y fuera de él (§6.1) |
 | **El free tier perpetuo de DynamoDB exige modo aprovisionado**, no bajo demanda | Es una condición de diseño y además un techo real de capacidad de escritura. Pasar la tabla a modo bajo demanda es una casilla, y sacaría la tabla del free tier en silencio |
 | **AWS no tiene un tope duro de gasto.** Un presupuesto **notifica**, no frena | El freno hay que construirlo: una acción de presupuesto con política de denegación. Y no basta con que exista |
 
@@ -333,10 +427,21 @@ antes de crear el primer recurso**, y "probado" no significa que llegue el corre
 significa que un intento de superar el umbral es **efectivamente denegado**. Es la
 primera tarea del proyecto en la nube, no la última.
 
-Sobre el resultado: **el gasto va a ser cero, y eso no es mérito de ingeniería.**
-Es lo que hace el Plan Gratuito. Lo que sí es trabajo es el freno, porque AWS no
-lo trae puesto, y la reproducibilidad, porque es lo que hace que el proyecto
-sobreviva al cierre de la cuenta.
+Sobre el resultado: **el gasto esperado es cero, y ahora sí hay algo de mérito en
+ello — pero menos del que parece.** No lo garantiza el plan, porque este plan no
+garantiza nada: lo garantizan los límites del *free tier* y el hecho de que los
+volúmenes de este proyecto caben dentro con holgura. Lo que sí es trabajo es el
+freno, porque AWS no lo trae puesto; **acotar el consumo del instrumento**, que es
+lo único del alcance que un desconocido puede disparar en bucle; y la
+reproducibilidad, porque es lo que hace que el proyecto sobreviva al cierre de la
+cuenta.
+
+Y una cifra que salió de medir y no de estimar: **una reserva confirmada consume
+8 unidades de escritura, no 1.** La intuición dice que una reserva es una
+escritura; el motor cobra por una transacción de varios ítems, cada uno a doble
+tarifa. De ahí sale todo lo demás —la tasa sostenida real, y que una ejecución
+del instrumento sean ~400 unidades de golpe sobre 25 sostenidas—. Estimarlo desde
+el modelo habría dado una cifra tranquilizadora y falsa.
 
 **Lo que no verifiqué:** la lista completa de servicios restringidos del Plan
 Gratuito —la documentación da ejemplos, no un listado cerrado— y la clasificación
@@ -373,14 +478,22 @@ Fuentes:
 
 ## 9 · Estado, sin adornos
 
+*Al 2026-08-14. Esta tabla decía «Código: Nada · Pruebas: Ninguna · Cuenta de
+AWS: Sin abrir» hasta hoy, y llevaba meses siendo falsa — en el mismo archivo que
+termina exigiendo que se corrija cada vez. Queda anotado.*
+
 | Qué | Hoy |
 |---|---|
-| Código | Nada |
-| Pruebas | Ninguna |
-| Integración continua | Sin configurar |
-| Cuenta de AWS | Sin abrir. El reloj de seis meses no ha arrancado |
-| Demo | No existe |
-| Tablas de §3 | En blanco, y por eso están ahí |
+| Código | Núcleo puro, adaptadores, frontera HTTP, seguridad, instrumento e interfaz |
+| Pruebas | **392 en verde**, más tres suites de mutación que las ponen en rojo a propósito |
+| Integración continua | En verde en cada empujón, en una máquina que no es la mía |
+| Cuenta de AWS | Abierta. **En Plan de Pago y sin créditos**, contra lo que se había decidido (§6) |
+| Guardarraíl de costos | Desplegado **antes que ningún otro recurso**, y probado: deniega y nombra su causa |
+| Motor real | La tabla existe y el mecanismo está verificado contra ella |
+| Despliegue del borde | **Escrito y sin ejecutar.** El IaC está en `infra/`, el procedimiento también |
+| Demo | No existe todavía. Cuando exista, irá fuera de AWS y con su caducidad declarada (§6.1) |
+| Evidencia visual grabada | **Pendiente, y es lo único irreversible**: si la cuenta muere sin ella, no se recupera |
+| Tablas de §3 | Con las cifras de concurrencia dentro. **Las de carga y latencia siguen en blanco**, y por eso están ahí |
 
 Lo que sí existe es la decisión de en qué orden hacer las cosas: **primero cerrar
 la carrera, después todo lo visible.** Al revés —frontend desplegado, integración

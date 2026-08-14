@@ -1,6 +1,6 @@
 """El emparejado de rutas del servidor de desarrollo.
 
-`servidor_local.py` es un andamio, y aun asi esta pieza necesita prueba: **calca
+`servidor.py` es un punto de entrada delgado, y aun asi esta pieza necesita prueba: **calca
 lo que en produccion hace API Gateway**. Si empareja distinto, todo lo que se
 mida en local describe un sistema que no es el que se despliega — y lo hara en
 verde, que es la peor forma de equivocarse.
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from herramientas.servidor_local import casar_ruta
+from herramientas.servidor import casar_ruta
 from reservas.casos_uso.atender import RUTAS
 
 
