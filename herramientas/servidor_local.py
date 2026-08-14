@@ -1,0 +1,291 @@
+"""El sistema entero en una maquina, sin nube y sin cuenta de AWS.
+
+    python -m herramientas.servidor_local --sembrar
+
+Levanta el sustituto local en un contenedor, siembra los datos, y sirve en
+`http://localhost:8080` **la misma funcion que corre en Lambda** y la misma
+pagina que se sube a S3.
+
+Existe por T7a y por CD2: el repositorio tiene que poder ejecutarse en la maquina
+de un desconocido, y el instrumento tiene que poder apuntarle. Sin esto, ver
+funcionar el sistema exige una cuenta de AWS — y pedirle eso a quien revisa el
+repositorio es pedirle demasiado.
+
+------------------------------------------------------------------------------
+ESTO NO ES API GATEWAY, Y LA DIFERENCIA IMPORTA
+------------------------------------------------------------------------------
+Traduce una peticion HTTP al **formato de carga 2.0** y llama a
+`api_gateway.manejar`, que es exactamente el camino de la funcion desplegada. De
+ahi para adentro **no hay ninguna segunda implementacion**: mismo caso de uso,
+mismo traductor, mismos controles.
+
+De ahi para AFUERA si hay diferencias, y se declaran en vez de disimularse:
+
+  - **El emparejado de rutas lo hace este fichero.** En produccion lo hace API
+    Gateway a partir de las `RouteKey` de la plantilla. Aqui se calca leyendo
+    `atender.RUTAS`, que es la misma tabla que la plantilla tiene que respetar
+    (lo vigila `test_infra.py`). Pero es un calco, no el original.
+  - **No hay estrangulamiento del borde.** El `ThrottlingRateLimit` de la etapa
+    no existe aqui, asi que la mitad del borde de la desigualdad de SEC-1 no se
+    ejerce. El contador por identidad si, porque vive en la tabla.
+  - **CORS no se ejerce**: pagina y API salen del mismo origen, asi que el
+    navegador no pregunta. En produccion manda la `CorsConfiguration` del API.
+  - **No hay arranque en frio.** La dispersion de la barrera que mida el
+    instrumento contra esto sera mejor que la real.
+
+Lo que se mide aqui vale para C1 —una confirmacion por franja— y **no vale como
+medicion de rendimiento** del sistema desplegado.
+"""
+
+from __future__ import annotations
+
+import argparse
+import http.server
+import json
+import os
+import pathlib
+import secrets
+import socketserver
+import sys
+import threading
+import urllib.parse
+from datetime import datetime, timezone
+
+from reservas import config, entrada
+from reservas.adaptadores import api_gateway, dynamodb
+from reservas.casos_uso.atender import RUTAS
+from reservas.nucleo import tiempo
+
+RAIZ = pathlib.Path(__file__).resolve().parent.parent
+PAGINA = RAIZ / "frontend" / "index.html"
+
+
+def casar_ruta(metodo: str, camino: str):
+    """Camino concreto -> (plantilla, parametros). Lo que hace API Gateway.
+
+    Se resuelve contra `atender.RUTAS`, que es la misma tabla que la plantilla
+    de CloudFormation tiene que declarar. Que las dos no se separen lo vigila
+    `test_infra.py`; aqui solo se usa la que ya existe.
+    """
+    partes_camino = [p for p in camino.strip("/").split("/") if p != ""]
+    for metodo_ruta, plantilla in RUTAS:
+        if metodo_ruta != metodo:
+            continue
+        partes = [p for p in plantilla.strip("/").split("/") if p != ""]
+        if len(partes) != len(partes_camino):
+            continue
+        parametros = {}
+        for esperada, recibida in zip(partes, partes_camino):
+            if esperada.startswith("{") and esperada.endswith("}"):
+                parametros[esperada[1:-1]] = urllib.parse.unquote(recibida)
+            elif esperada != recibida:
+                break
+        else:
+            return plantilla, parametros
+    return None, {}
+
+
+class Manejador(http.server.BaseHTTPRequestHandler):
+    """Traduce HTTP a evento 2.0 y devuelve lo que la funcion responda."""
+
+    protocol_version = "HTTP/1.1"
+    dependencias = None  # lo pone `arrancar`
+    _local = threading.local()
+
+    def log_message(self, formato, *args):  # menos ruido, mas legible
+        sys.stderr.write(f"  {self.command} {self.path} -> {args[1]}\n")
+
+    # -- utilidades --------------------------------------------------------
+
+    def _responder(self, codigo: int, cuerpo: bytes, tipo: str):
+        self.send_response(codigo)
+        self.send_header("Content-Type", tipo)
+        self.send_header("Content-Length", str(len(cuerpo)))
+        self.end_headers()
+        self.wfile.write(cuerpo)
+
+    def _pagina(self):
+        if not PAGINA.exists():
+            return self._responder(404, b"falta frontend/index.html", "text/plain")
+        self._responder(
+            200, PAGINA.read_bytes(), "text/html; charset=utf-8"
+        )
+
+    def _api(self, metodo: str):
+        partes = urllib.parse.urlsplit(self.path)
+        plantilla, parametros = casar_ruta(metodo, partes.path)
+        if plantilla is None:
+            # Igual que API Gateway: lo que no esta declarado no llega a la
+            # funcion. Se responde 404 sin invocar nada.
+            return self._responder(
+                404, b'{"message":"Not Found"}', "application/json"
+            )
+
+        longitud = int(self.headers.get("Content-Length") or 0)
+        crudo = self.rfile.read(longitud).decode("utf-8") if longitud else None
+        consulta = {
+            k: v[0] for k, v in urllib.parse.parse_qs(partes.query).items()
+        }
+
+        evento = {
+            "version": "2.0",
+            "routeKey": f"{metodo} {plantilla}",
+            "rawPath": partes.path,
+            "headers": {k.lower(): v for k, v in self.headers.items()},
+            "queryStringParameters": consulta or None,
+            "pathParameters": parametros or None,
+            "requestContext": {
+                "http": {
+                    "method": metodo,
+                    "path": partes.path,
+                    # El origen para la cuota del dispensador. En produccion lo
+                    # pone el borde y el cliente no lo elige; aqui es la IP del
+                    # socket, que es lo mas parecido que hay.
+                    "sourceIp": self.client_address[0],
+                }
+            },
+            "body": crudo,
+            "isBase64Encoded": False,
+        }
+
+        salida = api_gateway.manejar(
+            evento, self.dependencias, api_gateway.ahora_local()
+        )
+        cuerpo = (salida.get("body") or "").encode("utf-8")
+        self.send_response(salida["statusCode"])
+        for nombre, valor in (salida.get("headers") or {}).items():
+            self.send_header(nombre, valor)
+        self.send_header("Content-Length", str(len(cuerpo)))
+        self.end_headers()
+        self.wfile.write(cuerpo)
+
+    # -- verbos ------------------------------------------------------------
+
+    def do_GET(self):
+        camino = urllib.parse.urlsplit(self.path).path
+        if camino in ("/", "/index.html"):
+            return self._pagina()
+        self._api("GET")
+
+    def do_POST(self):
+        self._api("POST")
+
+    def do_OPTIONS(self):
+        """Lo contesta API Gateway en produccion, a partir de su
+        `CorsConfiguration`. Aqui se contesta para que el navegador no se
+        atasque, y **no prueba nada sobre la configuracion real**."""
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "content-type,authorization")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+
+class Servidor(socketserver.ThreadingTCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+    request_queue_size = 128
+    """La cola de escucha del socket. **El defecto son 5, y con 5 esto no sirve
+    para lo que existe.**
+
+    Se descubrio ejecutandolo, no leyendolo: el instrumento lanza 50 conexiones
+    a la vez y el sistema operativo rechazaba dos o tres antes de que el
+    servidor llegara a aceptarlas. El instrumento las clasificaba como `otro` y
+    las descontaba de las competidoras efectivas —**se comporto bien**, no
+    conto como competidora algo de lo que no constaba que hubiera competido—
+    pero la medicion quedaba con 48 de 50 por un limite del andamio, no del
+    sistema medido.
+
+    Es la clase de defecto que ninguna prueba iba a encontrar, porque las
+    pruebas llaman a `atender` en proceso y nunca abren un socket."""
+
+
+def preparar(endpoint: str, sembrar: bool):
+    """Cliente contra el sustituto, tabla creada y datos sembrados."""
+    cliente = dynamodb.crear_cliente(endpoint)
+    conjunto = None
+    if sembrar:
+        from reservas import sembrado
+
+        dynamodb.recrear_tabla(cliente, config.TABLA)
+        conjunto = sembrado.sembrar(
+            cliente, config.TABLA, tiempo.t0_desde(datetime.now(timezone.utc))
+        )
+    return cliente, conjunto
+
+
+def main(argv=None) -> int:
+    analizador = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    analizador.add_argument("--puerto", type=int, default=8080)
+    analizador.add_argument(
+        "--endpoint", default=None, help="sustituto local; por defecto config.endpoint()"
+    )
+    analizador.add_argument("--sembrar", action="store_true")
+    analizador.add_argument("--unidades", default=None, help="lista separada por comas")
+    args = analizador.parse_args(argv)
+
+    # **La guarda que hace segura esta herramienta.** Es un servidor de
+    # desarrollo: si arrancara apuntando al motor real, cada peticion de quien
+    # estuviera probando seria dinero (D-P4-19, D-P4-17).
+    if config.motor_real():
+        print(
+            "RESERVAS_MOTOR_REAL esta puesta. Este servidor es de desarrollo y "
+            "no habla con AWS: quitala y vuelve a intentarlo.",
+            file=sys.stderr,
+        )
+        return 1
+
+    endpoint = args.endpoint or config.endpoint()
+    cliente, conjunto = preparar(endpoint, args.sembrar)
+
+    if args.unidades:
+        activas = args.unidades
+    elif conjunto is not None:
+        activas = ",".join(conjunto.activas)
+    else:
+        print(
+            "sin --sembrar hay que decir que unidades existen ya: usa --unidades",
+            file=sys.stderr,
+        )
+        return 1
+
+    entorno = {
+        "RESERVAS_UNIDADES_ACTIVAS": activas,
+        "RESERVAS_ESPACIOS": "E-SAL,E-BBQ,E-CAN",
+        "RESERVAS_VENTANA_SEGUNDOS": "300",
+        "RESERVAS_TOPE_POR_IDENTIDAD": "5",
+        "RESERVAS_TOPE_POR_ORIGEN": "20",
+        "RESERVAS_CAPACIDAD_DEL_BORDE": str(len(activas.split(",")) * 5),
+        "RESERVAS_ENFRIAMIENTO_SEGUNDOS": os.environ.get(
+            "RESERVAS_ENFRIAMIENTO_SEGUNDOS", "20"
+        ),
+        "RESERVAS_ORIGEN_PERMITIDO": f"http://localhost:{args.puerto}",
+        "RESERVAS_CLAVE_FIRMA": secrets.token_urlsafe(48),
+    }
+    Manejador.dependencias = entrada.dependencias(entorno=entorno, cliente=cliente)
+
+    n = len(activas.split(","))
+    print(f"Sistema en http://localhost:{args.puerto}")
+    print(f"  motor .......... {endpoint}  (sustituto local, NUNCA AWS)")
+    print(f"  identidades .... {n} en conjunto cerrado")
+    print(f"  tope ........... {entorno['RESERVAS_TOPE_POR_IDENTIDAD']} intentos "
+          f"por identidad y ventana -> techo {n * 5}")
+    print(f"  enfriamiento ... {entorno['RESERVAS_ENFRIAMIENTO_SEGUNDOS']} s entre "
+          "ejecuciones del instrumento (D-CE4-1)")
+    print()
+    print(f"  el instrumento:  python -m herramientas.m2_instrumento "
+          f"--url http://localhost:{args.puerto}")
+    print()
+
+    with Servidor(("127.0.0.1", args.puerto), Manejador) as servidor:
+        try:
+            servidor.serve_forever()
+        except KeyboardInterrupt:
+            print("\nparado")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
