@@ -6,10 +6,10 @@ Los dos mutantes de seguridad — extension de M4 (SEC-1, SEC-2)
 
   CONTROL test_prestamo.py     20 passed in 0.03s
   CONTROL test_contador.py     15 passed in 0.02s
-  CONTROL test_atender.py      27 passed in 0.04s
+  CONTROL test_atender.py      27 passed in 0.03s
 
-  [ROJO ] apagar el AUTORIZADOR   10 failed, 37 passed in 0.16s
-  [ROJO ] apagar el CONTADOR      7 failed, 35 passed in 0.07s
+  [ROJO ] apagar el AUTORIZADOR   10 failed, 37 passed in 0.19s
+  [ROJO ] apagar el CONTADOR      7 failed, 35 passed in 0.08s
 
 ======================================================================
 VEREDICTO: PASA — apagar el autorizador o el contador rompe las pruebas. Los dos controles estan vigilados.

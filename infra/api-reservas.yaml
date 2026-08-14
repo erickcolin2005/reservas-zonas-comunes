@@ -1,0 +1,442 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# I-6 — El borde publico: funcion, API y el sitio que sirve el frontend.
+#
+# Tercera pila del proyecto, y el orden importa igual que antes: el guardarrail
+# (m0-guardarrail.yaml) primero, la tabla (tabla-reservas.yaml) despues, y esto
+# al final. Nada de aqui puede crearse antes que el freno.
+#
+# ---------------------------------------------------------------------------
+# LO QUE ESTA PILA DECIDE, Y QUE PASA SI SE TOCA
+# ---------------------------------------------------------------------------
+#
+# 1. CONCURRENCIA RESERVADA, y es un control de los dos lados.
+#    Sin tope, una Lambda escala hasta el limite de la cuenta y puede golpear la
+#    tabla muy por encima de sus 25 WCU. Con el tope demasiado BAJO, el
+#    instrumento no consigue lanzar sus 50 a la vez y **la medicion se invalida
+#    sin que el sistema haya fallado** — el mismo modo de fallo que D-CE4-1
+#    evita por el otro lado. Por eso el minimo de este parametro es 50: el
+#    instrumento necesita 50 simultaneas y bajarlo de ahi rompe M2-INS en
+#    silencio, que es peor que romperlo con un error.
+#
+# 2. LA POLITICA IAM ES EXACTAMENTE LO QUE EL CAMINO DE PETICION USA.
+#    Cuatro acciones: GetItem, Query, UpdateItem, TransactWriteItems. Nada mas.
+#    La funcion **no puede** crear tablas, ni borrarlas, ni hacer BatchWrite, ni
+#    Scan. Sembrar y recrear la tabla son operaciones de mantenimiento que hace
+#    Erick con su usuario, no algo que el borde publico deba poder hacer. Si
+#    manana el codigo necesita una accion nueva, esta plantilla tiene que
+#    enterarse — que es justo lo que una politica con `dynamodb:*` impediria.
+#
+# 3. CORS VIVE AQUI, aunque el codigo tambien lo ponga.
+#    Cuando una HTTP API tiene CorsConfiguration, **API Gateway ignora las
+#    cabeceras CORS que devuelva la integracion**. Es decir: la negativa al
+#    comodin que `borde.cabeceras_cors` sostiene y que sus pruebas vigilan
+#    quedaria sin efecto si aqui se pusiera un `*`. Por eso el parametro lleva
+#    `AllowedPattern` que lo rechaza. El codigo conserva su comprobacion como
+#    segunda linea, no como la unica.
+#
+# 4. LOS REGISTROS CADUCAN.
+#    Un grupo de CloudWatch Logs sin `RetentionInDays` guarda para siempre. El
+#    caso de negocio ya senalo que la observabilidad es "la partida que el
+#    alcance da por supuesta y nadie ha nombrado", y que su consumo es
+#    proporcional a los eventos que M2-INS y M7 estan disenados para disparar.
+#    Con la cuenta en Plan de Pago y cero creditos, "para siempre" es una factura
+#    que crece sola.
+#
+# ---------------------------------------------------------------------------
+# LO QUE ESTA PILA NO RESUELVE, Y SE DICE EN VEZ DE DISIMULARSE
+# ---------------------------------------------------------------------------
+#
+# - LA CLAVE DE FIRMA viaja como parametro `NoEcho` y acaba en una variable de
+#   entorno de la funcion. **No esta en el repositorio** (RNF-07) pero **si es
+#   legible en la consola** por quien tenga acceso a la cuenta, y rotarla obliga
+#   a redesplegar. Secrets Manager lo resolveria y cuesta ~0,40 USD al mes por
+#   secreto: **fuera del free tier**, es decir dinero real en esta cuenta. Se
+#   elige la variable de entorno **a sabiendas**, y se puede escribir porque lo
+#   que la clave protege son identidades sinteticas de un conjunto cerrado de
+#   cincuenta unidades inventadas. Con datos reales esta decision no valdria.
+#
+# - LAS RUTAS NO DECLARADAS las rechaza API Gateway con su propio 404, cuyo
+#   cuerpo no es el de `atender`. Un desconocido que sondee puede por tanto
+#   distinguir "ruta que llega a la funcion" de "ruta que no existe". Se acepta:
+#   la alternativa es una ruta `$default` que **invoque la funcion en cada
+#   sondeo**, convirtiendo un escaneo automatico en consumo. Se prefiere la
+#   diferencia de formato al gasto.
+#
+# - EL BUCKET DEL FRONTEND ES DE LECTURA PUBLICA, y tiene que serlo: sirve una
+#   pagina publica. Solo `GetObject`, sin listar y sin escribir. CloudFront con
+#   OAC evitaria el bucket publico y anadiria otra pieza que operar; para un
+#   fichero estatico de demostracion no compensa.
+
+Description: >-
+  I-6 - Borde publico: funcion Lambda, HTTP API y bucket del frontend.
+  Concurrencia acotada, IAM ajustada a las cuatro acciones del camino de
+  peticion, y CORS con origen explicito.
+
+Parameters:
+
+  NombreTabla:
+    Type: String
+    Default: reservas-zonas-comunes
+    Description: Debe coincidir con config.TABLA y con la pila tabla-reservas.
+
+  CodigoBucket:
+    Type: String
+    Description: >-
+      Bucket donde esta el zip del codigo. Lo crea y lo sube el runbook antes de
+      desplegar esta pila.
+
+  CodigoClave:
+    Type: String
+    Description: Clave del zip dentro de CodigoBucket.
+
+  ClaveFirma:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: >-
+      Clave HMAC de los prestamos. NO tiene valor por defecto y el minimo son 32
+      caracteres: `prestamo.py` se niega a funcionar con una vacia porque un
+      secreto por defecto acaba siendo el secreto de todos (RNF-07).
+
+  NombreSitio:
+    Type: String
+    AllowedPattern: "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+    Description: >-
+      Nombre EXPLICITO del bucket del frontend, y explicito por una razon de
+      orden: `OrigenPermitido` hace falta **al crear** la pila, pero la URL del
+      sitio no se conoce hasta que el bucket existe. Con el nombre fijado, la URL
+      es predecible antes de desplegar
+      -`http://<nombre>.s3-website-<region>.amazonaws.com`- y el runbook puede
+      pasar el origen correcto a la primera. Dejarlo autogenerado obligaria a
+      desplegar dos veces, y el sintoma del intento fallido -"no pasa nada al
+      pulsar"- no se parece en nada a su causa.
+      Los nombres de bucket son unicos en todo AWS: elige uno con sufijo propio.
+
+  OrigenPermitido:
+    Type: String
+    AllowedPattern: "^https?://[^*]+$"
+    Description: >-
+      Origen exacto del frontend. El patron RECHAZA el comodin (SEC-6): un `*`
+      aqui convertiria el instrumento en algo que cualquier pagina podria
+      disparar desde el navegador de un tercero. Y como API Gateway ignora las
+      cabeceras CORS de la integracion cuando hay CorsConfiguration, este es el
+      valor que manda de verdad.
+
+  UnidadesActivas:
+    Type: CommaDelimitedList
+    Description: >-
+      El conjunto CERRADO de identidades prestables (D-SEC-1). Llega como dato y
+      no como generador: es lo que hace verdadera la frase "el extremo no puede
+      crear una identidad que no exista ya en la tabla". Tiene que coincidir con
+      lo sembrado.
+
+  Espacios:
+    Type: CommaDelimitedList
+    Default: E-SAL,E-BBQ,E-CAN
+    Description: Identificadores de los espacios sembrados.
+
+  VentanaSegundos:
+    Type: Number
+    Default: 300
+    MinValue: 30
+    Description: >-
+      Ventana del contador de intentos (SEC-1). Corta a proposito y del orden de
+      una ejecucion del instrumento: si fuera larga, un extrano que agote las
+      identidades dejaria al siguiente revisor sin poder ejecutarlo (T-12).
+
+  TopePorIdentidad:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    Description: >-
+      Intentos por identidad y ventana. El 5 no se inventa: se DERIVA de lo
+      observado en I-3 -el CI necesito 3 corridas de K-03- mas el margen de 2 de
+      `sugerencia_de_tope`.
+
+  TopePorOrigen:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    Description: >-
+      Lotes de credenciales por origen y ventana (D-SEC-6). Bajo a proposito: el
+      instrumento necesita UN lote por ejecucion, asi que 2 deja margen para un
+      reintento y no para un bucle.
+
+  CapacidadDelBorde:
+    Type: Number
+    Default: 250
+    Description: >-
+      Lo que el borde deja pasar en una ventana. `entrada.py` comprueba AL
+      ARRANCAR que `identidades x tope <= esto`, y **la funcion no arranca si no
+      se cumple**: con la desigualdad rota, el borde rechazaria antes que el
+      contador y la medicion se invalidaria sin que el contador hubiera actuado.
+
+  EnfriamientoSegundos:
+    Type: Number
+    Default: 20
+    MinValue: 1
+    Description: >-
+      D-CE4-1. Entre ejecuciones del instrumento, y GLOBAL: lo que protege es el
+      deposito de rafaga de la tabla, que es compartido. Son 20 y no 16 con
+      margen deliberado, porque el calculo del deposito se extrapolo desde una
+      tabla de 5 WCU y no se ha medido sobre la de 25.
+
+  ConcurrenciaReservada:
+    Type: Number
+    Default: 60
+    MinValue: 50
+    MaxValue: 100
+    Description: >-
+      Ejecuciones simultaneas de la funcion. **El minimo es 50 y no es
+      arbitrario:** el instrumento lanza 50 a la vez y con menos no consigue
+      producir la carrera — la medicion saldria invalida sin que el sistema
+      hubiera fallado. El maximo acota lo que puede golpear a una tabla de 25
+      WCU.
+
+  DiasDeRegistro:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 30
+    Description: >-
+      Caducidad de los registros. Sin esto CloudWatch guarda para siempre, y el
+      volumen es proporcional a lo que M2-INS esta disenado para disparar.
+
+Resources:
+
+  # -- El papel de la funcion: cuatro acciones, una tabla ---------------------
+
+  PapelFuncion:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: registros
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt RegistroFuncion.Arn
+        - PolicyName: tabla-solo-lo-que-usa
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Exactamente lo que el camino de peticion usa, y ni una mas. Ni
+              # Scan, ni BatchWrite, ni CreateTable, ni DeleteTable, ni
+              # DeleteItem: comprometer la funcion no permite rehacer el modelo
+              # de datos ni vaciarlo. Sembrar y recrear la tabla son
+              # mantenimiento, y los hace Erick con su usuario.
+              #
+              # **NO existe `dynamodb:TransactWriteItems`, y esto costo un aviso
+              # de cfn-lint descubrirlo.** Una transaccion no se autoriza con una
+              # accion propia: se autoriza con las acciones de ITEM de lo que la
+              # transaccion hace dentro. La prueba de que es asi esta en el
+              # propio catalogo de acciones de DynamoDB, que incluye
+              # `ConditionCheckItem` — una accion que solo tiene sentido dentro
+              # de una transaccion, y que no haria falta si hubiera una accion de
+              # transaccion. La nuestra hace `Put` y `Update` (modelo-datos
+              # §5.1), asi que necesita PutItem y UpdateItem. Con
+              # `TransactWriteItems` escrito aqui, el despliegue habria salido
+              # bien y la primera reserva habria muerto con AccessDenied.
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem        # lecturas previas y contadores
+                  - dynamodb:Query          # ocupacion del dia, agenda
+                  - dynamodb:PutItem        # los `Put` de la transaccion
+                  - dynamodb:UpdateItem     # el `Update` del cupo y los contadores
+                Resource: !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${NombreTabla}"
+
+  RegistroFuncion:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-reservas"
+      RetentionInDays: !Ref DiasDeRegistro
+
+  Funcion:
+    Type: AWS::Lambda::Function
+    DependsOn: RegistroFuncion
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-reservas"
+      Runtime: python3.13
+      Handler: reservas.entrada.lambda_handler
+      Role: !GetAtt PapelFuncion.Arn
+      Code:
+        S3Bucket: !Ref CodigoBucket
+        S3Key: !Ref CodigoClave
+      # 10 s: el camino largo es el perdedor de una carrera, que reintenta con
+      # espera aleatoria acotada. Mas alla de esto no esta esperando al motor,
+      # esta colgado — y una funcion colgada consume mientras cuelga.
+      Timeout: 10
+      MemorySize: 256
+      ReservedConcurrentExecutions: !Ref ConcurrenciaReservada
+      Environment:
+        Variables:
+          RESERVAS_CLAVE_FIRMA: !Ref ClaveFirma
+          RESERVAS_ORIGEN_PERMITIDO: !Ref OrigenPermitido
+          RESERVAS_UNIDADES_ACTIVAS: !Join [",", !Ref UnidadesActivas]
+          RESERVAS_ESPACIOS: !Join [",", !Ref Espacios]
+          RESERVAS_VENTANA_SEGUNDOS: !Ref VentanaSegundos
+          RESERVAS_TOPE_POR_IDENTIDAD: !Ref TopePorIdentidad
+          RESERVAS_TOPE_POR_ORIGEN: !Ref TopePorOrigen
+          RESERVAS_CAPACIDAD_DEL_BORDE: !Ref CapacidadDelBorde
+          RESERVAS_ENFRIAMIENTO_SEGUNDOS: !Ref EnfriamientoSegundos
+          # RESERVAS_MOTOR_REAL NO se pone aqui y no hace falta: la llave de
+          # D-P4-19 existe para que nadie golpee AWS desde una maquina de
+          # desarrollo. Dentro de la propia cuenta, boto3 resuelve el extremo
+          # del servicio solo.
+
+  # -- El API. Cuatro rutas, las mismas que declara `atender.RUTAS` -----------
+
+  Api:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-api"
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: [!Ref OrigenPermitido]
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowHeaders: [content-type, authorization]
+        MaxAge: 600
+
+  Integracion:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref Api
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt Funcion.Arn
+      PayloadFormatVersion: "2.0"
+      IntegrationMethod: POST
+
+  RutaEspacios:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref Api
+      RouteKey: "GET /espacios"
+      Target: !Sub "integrations/${Integracion}"
+
+  RutaDisponibilidad:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref Api
+      RouteKey: "GET /espacios/{id}/disponibilidad"
+      Target: !Sub "integrations/${Integracion}"
+
+  RutaReservas:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref Api
+      RouteKey: "POST /reservas"
+      Target: !Sub "integrations/${Integracion}"
+
+  RutaCredenciales:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref Api
+      RouteKey: "POST /demo/credenciales"
+      Target: !Sub "integrations/${Integracion}"
+
+  Etapa:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref Api
+      StageName: $default
+      AutoDeploy: true
+      # El estrangulamiento del BORDE. Es la otra mitad de la desigualdad que
+      # `entrada.py` comprueba: si el borde dejara pasar menos que
+      # `identidades x tope`, rechazaria antes que el contador y el instrumento
+      # recibiria SYS-TASA del borde -medicion invalida- sin que el contador
+      # hubiera actuado. El pico admite la tanda de 50 de golpe.
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+
+  PermisoInvocacion:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Funcion
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${Api}/*"
+
+  # -- El sitio del frontend -------------------------------------------------
+
+  SitioFrontend:
+    Type: AWS::S3::Bucket
+    # `Retain` como la tabla: borrar la pila no debe llevarse por delante lo que
+    # sirve la demostracion mientras el enlace publicado siga vivo (CD4).
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref NombreSitio
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      PublicAccessBlockConfiguration:
+        # Las cuatro en false porque el bucket sirve una pagina publica y su
+        # politica lo dice explicitamente. Lo que NO se abre es escritura ni
+        # listado: ver la politica de abajo.
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  PoliticaSitio:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SitioFrontend
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # SOLO GetObject, y solo sobre los objetos. Sin `s3:ListBucket`, asi
+          # que nadie puede enumerar lo que hay dentro; sin `PutObject`, asi que
+          # nadie puede dejar nada.
+          - Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${SitioFrontend.Arn}/*"
+
+Outputs:
+
+  UrlApi:
+    Description: >-
+      Base del API. **Es lo que hay que escribir en el bloque `configuracion` de
+      frontend/index.html antes de subirlo**, y lo que se le pasa al instrumento
+      con --url. La pagina se publica con la clave vacia a proposito: una URL
+      cocida en el repositorio sobreviviria al despliegue que la dejo obsoleta.
+    Value: !GetAtt Api.ApiEndpoint
+
+  UrlFrontend:
+    Description: >-
+      El enlace de la demo. CD4: **nunca se publica solo** — siempre con su
+      caducidad declarada, la evidencia grabada y el IaC.
+    Value: !GetAtt SitioFrontend.WebsiteURL
+
+  BucketFrontend:
+    Value: !Ref SitioFrontend
+
+  OrigenParaCors:
+    Description: >-
+      Comprobacion cruzada para el runbook: este valor y `UrlFrontend` tienen
+      que coincidir **caracter a caracter**, incluido el esquema. Si no
+      coinciden, el navegador bloquea todas las llamadas y el sintoma -"no pasa
+      nada al pulsar"- no se parece en nada a la causa. Es lo primero que hay
+      que mirar si la pagina carga y no hace nada.
+    Value: !Ref OrigenPermitido
+
+  UrlFrontendEsperada:
+    Description: >-
+      La URL que el nombre del bucket produce, calculada sin consultar el
+      recurso. Existe para poder compararla con `OrigenParaCors` **antes** de
+      abrir el navegador.
+    Value: !Sub "http://${NombreSitio}.s3-website-${AWS::Region}.amazonaws.com"
