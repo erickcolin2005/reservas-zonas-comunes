@@ -6,19 +6,23 @@ Los criterios de aceptación son los del propio SEC-1, literales:
     activo»
   - «una identidad que agota su cuota recibe `SYS-TASA` **y una segunda
     identidad no queda afectada**»
+
+**Los casos de comportamiento no están escritos aquí**: viven en
+`casos_contador.py` y los ejecutan también las pruebas contra el motor
+(`test_contador_motor.py`). Este fichero corre la implementación en memoria y
+añade lo que es exclusivamente suyo. Corre **sin Docker**, y tiene que poder:
+M4S lo muta en un paso del CI que no levanta ningún contenedor.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 import pytest
 
 from reservas.seguridad import contador as c
 
-AHORA = datetime(2026, 9, 7, 9, 0, tzinfo=timezone.utc)
-VENTANA = timedelta(seconds=60)
-RESERVAR = "POST /reservas"
+from .casos_contador import CASOS, VENTANA
 
 
 def nuevo(tope=3, ventana=VENTANA):
@@ -26,82 +30,18 @@ def nuevo(tope=3, ventana=VENTANA):
 
 
 # ---------------------------------------------------------------------------
-# Los dos criterios de aceptación de SEC-1
+# Los casos compartidos, contra la implementación en memoria
 # ---------------------------------------------------------------------------
 
 
-def test_el_instrumento_sigue_produciendo_50_simultaneas_con_el_limite_activo():
-    """El criterio que decide si el control es compatible con el proyecto.
-
-    Un límite que impidiera al instrumento lanzar sus 50 solicitudes no estaría
-    protegiendo el sistema: estaría **apagando la única prueba de que la carrera
-    se cierra**, que es lo que el proyecto existe para demostrar.
-    """
-    cont = nuevo(tope=3)
-    for i in range(50):
-        cont.registrar(f"U-{100 + i}", RESERVAR, AHORA)  # ninguna levanta
-
-
-def test_una_identidad_agotada_no_afecta_a_las_demas():
-    cont = nuevo(tope=2)
-    cont.registrar("U-101", RESERVAR, AHORA)
-    cont.registrar("U-101", RESERVAR, AHORA)
-    with pytest.raises(c.TasaExcedida):
-        cont.registrar("U-101", RESERVAR, AHORA)
-    # La segunda identidad no queda afectada. Si lo estuviera, un solo visitante
-    # dejaria al siguiente sin instrumento: T-12, denegacion entre revisores.
-    cont.registrar("U-102", RESERVAR, AHORA)
+@pytest.mark.parametrize("nombre", sorted(CASOS))
+def test_caso_compartido(nombre):
+    CASOS[nombre](nuevo)
 
 
 # ---------------------------------------------------------------------------
-# Cuenta intentos, no confirmaciones
+# Lo que solo aplica a la versión en memoria
 # ---------------------------------------------------------------------------
-
-
-def test_cuenta_intentos_aunque_todos_sean_rechazados():
-    """Un contador de confirmaciones no limita nada: quien quiera agotar el
-    sistema puede hacerlo con solicitudes que se rechazan."""
-    cont = nuevo(tope=3)
-    for _ in range(3):
-        cont.registrar("U-101", RESERVAR, AHORA)  # el desenlace da igual
-    assert cont.consumido("U-101", AHORA) == 3
-    with pytest.raises(c.TasaExcedida):
-        cont.registrar("U-101", RESERVAR, AHORA)
-
-
-def test_la_cancelacion_tambien_consume_cuota():
-    """SEC-1 lo exige: «alcanza tambien la cancelacion». Sin esto, un bucle de
-    reservar-cancelar (S-f) rodea el control entero."""
-    cont = nuevo(tope=2)
-    cont.registrar("U-101", RESERVAR, AHORA)
-    cont.registrar("U-101", "POST /reservas/{id}/cancelacion", AHORA)
-    with pytest.raises(c.TasaExcedida):
-        cont.registrar("U-101", RESERVAR, AHORA)
-
-
-def test_las_lecturas_no_consumen_cuota():
-    """Solo las rutas que ESCRIBEN. Deja el calendario publico fluido, que es lo
-    que H5 necesita, y reduce el costo de escritura del propio control."""
-    cont = nuevo(tope=1)
-    for _ in range(20):
-        cont.registrar("U-101", "GET /espacios/{id}/disponibilidad", AHORA)
-    cont.registrar("U-101", RESERVAR, AHORA)  # la cuota sigue intacta
-
-
-# ---------------------------------------------------------------------------
-# La ventana expira sola
-# ---------------------------------------------------------------------------
-
-
-def test_la_ventana_expira_sin_que_nadie_la_limpie():
-    """El `ttl` del contador ES el fin de la ventana. Un control que necesita
-    mantenimiento en un sistema sin proceso de fondo es un control que un dia
-    deja de estar."""
-    cont = nuevo(tope=1, ventana=timedelta(seconds=60))
-    cont.registrar("U-101", RESERVAR, AHORA)
-    with pytest.raises(c.TasaExcedida):
-        cont.registrar("U-101", RESERVAR, AHORA + timedelta(seconds=59))
-    cont.registrar("U-101", RESERVAR, AHORA + timedelta(seconds=61))
 
 
 def test_una_ventana_no_positiva_se_rechaza_al_construir():

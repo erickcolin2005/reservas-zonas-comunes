@@ -24,6 +24,28 @@ hay proceso que limpie nada. Un control que necesita mantenimiento en un sistema
 sin proceso de fondo es un control que un dia deja de estar.
 
 ------------------------------------------------------------------------------
+LA VENTANA ES FIJA, NO DESLIZANTE — decision de Erick, y lo que cuesta
+------------------------------------------------------------------------------
+La ventana se parte en **cubetas** alineadas a la epoca: los intentos se cuentan
+contra `INTENTOS#<cubeta>`, y la cubeta cambia sola con el reloj.
+
+**Lo que se gana:** el contador desplegado es **una sola escritura de tamano
+fijo** —`ADD contador 1` con condicion— y la cubeta vieja desaparece por `ttl`
+sin que nadie limpie nada. Una ventana deslizante obligaria a guardar las marcas
+de tiempo de cada intento, y el contador es **lo primero que escribe cada
+solicitud**: encarecerlo encarece el camino que el instrumento satura a
+proposito.
+
+**Lo que cuesta, y se declara porque es real:** en el cambio de cubeta se pueden
+colar hasta **2 x tope** intentos en un intervalo de una ventana —el final de
+una cubeta y el principio de la siguiente—. Se acepta porque el control existe
+para acotar el techo (`50 x tope` en vez de infinito), no para regular un caudal
+exacto: un factor 2 sobre un techo calculable sigue siendo un techo calculable.
+**Lo que no se acepta es que local y desplegado cuenten distinto**, y por eso
+`cubeta()` es una sola funcion y las dos implementaciones corren las mismas
+pruebas (`test_contador.py`).
+
+------------------------------------------------------------------------------
 POR QUE NO HAY VALORES POR DEFECTO
 ------------------------------------------------------------------------------
 `security-agent` se nego a inventar la ventana y el tope, con la misma
@@ -58,6 +80,29 @@ class TasaExcedida(Exception):
     """
 
 
+def cubeta(ahora: datetime, ventana: timedelta) -> int:
+    """La cubeta de ventana fija a la que pertenece un instante.
+
+    **Alineada a la epoca y no al primer intento.** Si se anclara al primer
+    intento, cada identidad tendria su propia rejilla y el contador desplegado
+    necesitaria recordar cuando empezo cada una — que es justo el estado que la
+    ventana fija existe para no guardar.
+
+    Es una sola funcion a proposito: **es la definicion de "ventana" de todo el
+    sistema**, y las dos implementaciones del contador la llaman. Dos copias de
+    esto serian dos semanticas, y la de local no seria la de produccion.
+    """
+    segundos = int(ventana.total_seconds())
+    if segundos <= 0:
+        raise ValueError("una ventana no positiva no expira nunca")
+    return int(ahora.timestamp()) // segundos
+
+
+def fin_de_cubeta(numero: int, ventana: timedelta) -> int:
+    """Segundos desde la epoca en que la cubeta deja de existir. Es el `ttl`."""
+    return (numero + 1) * int(ventana.total_seconds())
+
+
 @dataclass
 class ContadorIntentos:
     """Cuenta intentos por identidad dentro de una ventana que expira sola.
@@ -85,23 +130,19 @@ class ContadorIntentos:
         if ruta not in RUTAS_CONTADAS:
             return  # las lecturas no consumen cuota
 
-        # La ventana expira sola: se descartan los intentos que ya caducaron, que
-        # es lo que hara el `ttl` del item en el motor real. Aqui se replica esa
-        # semantica para que la logica sea la misma en local y desplegado.
-        vivos = [
-            t for t in self._intentos.get(unidad, ())
-            if t + self.ventana > ahora
-        ]
-        if len(vivos) >= self.tope:
-            self._intentos[unidad] = vivos
+        # La cubeta ES la ventana. Las cubetas viejas no se limpian: se dejan de
+        # mirar, que es exactamente lo que hara el `ttl` del item en el motor
+        # real. La semantica es la misma en local y desplegado por construccion,
+        # porque los dos llaman a `cubeta()`.
+        clave = (unidad, cubeta(ahora, self.ventana))
+        if self._intentos.get(clave, 0) >= self.tope:
             raise TasaExcedida(
                 f"{unidad} agoto {self.tope} intentos en {self.ventana}"
             )
-        vivos.append(ahora)
-        self._intentos[unidad] = vivos
+        self._intentos[clave] = self._intentos.get(clave, 0) + 1
 
     def consumido(self, unidad: str, ahora: datetime) -> int:
-        return len([t for t in self._intentos.get(unidad, ()) if t + self.ventana > ahora])
+        return self._intentos.get((unidad, cubeta(ahora, self.ventana)), 0)
 
 
 class DesigualdadIncoherente(Exception):

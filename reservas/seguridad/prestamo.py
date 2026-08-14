@@ -200,6 +200,32 @@ class Dispensador:
     bucle. **Vive aqui y no en /reservas**, que es lo que impide que el limite
     destruya la carrera que el instrumento existe para producir."""
 
+    ventana: timedelta = VIGENCIA_POR_DEFECTO
+    """**La cuota por origen tenia tope y no tenia ventana, y eso era un defecto.**
+
+    Sin ventana, `tope_por_origen` no es un limite de tasa: es una expulsion
+    permanente. El segundo revisor que llegara desde la misma IP de salida
+    -una oficina, una universidad, una VPN- se encontraria el dispensador
+    cerrado para siempre, que es **T-12, denegacion entre revisores**, el mismo
+    riesgo que el modelo de amenazas ya obliga a evitar en el contador.
+
+    El valor es la vigencia del propio prestamo, y no es arbitrario: la unidad
+    natural aqui es *una sesion de revision*, y una sesion dura lo que duran las
+    credenciales que se lleva. Misma cubeta de ventana fija que el contador
+    (`contador.cubeta`), por la misma razon: una sola definicion de "ventana"."""
+
+    cuota: object | None = None
+    """Donde se lleva la cuenta por origen. `None` = **en memoria del proceso**.
+
+    En pruebas eso es correcto y es lo que hace que el banco corra sin motor. En
+    una Lambda es falso: cada contenedor tendria la suya y el tope se
+    multiplicaria por un numero que nadie decide. El despliegue inyecta
+    `CuotaOrigenDynamoDB`, que cuenta en la tabla con una escritura condicional.
+
+    Se deja **explicito y sin valor por defecto util** en vez de escondido:
+    quien construye un `Dispensador` sin cuota esta eligiendo la version en
+    memoria, no tropezandose con ella."""
+
     _pedidos_por_origen: dict = None
 
     def __post_init__(self):
@@ -222,13 +248,20 @@ class Dispensador:
                 f"{len(self.activas)}. No se crean identidades (D-SEC-1)"
             )
 
-        gastados = self._pedidos_por_origen.get(origen, 0)
-        if gastados >= self.tope_por_origen:
-            raise IdentidadNoPrestable(
-                f"el origen agoto su cuota de {self.tope_por_origen} lotes "
-                "(D-SEC-6)"
-            )
-        self._pedidos_por_origen[origen] = gastados + 1
+        if self.cuota is not None:
+            # La persistente levanta `IdentidadNoPrestable` por su cuenta.
+            self.cuota.consumir(origen, ahora)
+        else:
+            from .contador import cubeta  # tardio: evita un ciclo entre los dos
+
+            clave_cuota = (origen, cubeta(ahora, self.ventana))
+            gastados = self._pedidos_por_origen.get(clave_cuota, 0)
+            if gastados >= self.tope_por_origen:
+                raise IdentidadNoPrestable(
+                    f"el origen agoto su cuota de {self.tope_por_origen} lotes "
+                    "(D-SEC-6)"
+                )
+            self._pedidos_por_origen[clave_cuota] = gastados + 1
 
         # Asignacion sin repeticion dentro del lote. Aleatoria para que dos
         # ejecuciones seguidas no compitan siempre por las mismas unidades, que

@@ -91,23 +91,25 @@ class Dependencias:
     origen_permitido: str
 
     # ----------------------------------------------------------------------
-    # LO QUE FALTA PARA QUE ESTO SE PUEDA DESPLEGAR, declarado y no disimulado
+    # QUE CONTADOR ENTRA AQUI, Y POR QUE IMPORTA MAS DE LO QUE PARECE
     # ----------------------------------------------------------------------
-    # `ContadorIntentos` y `Dispensador` **cuentan en memoria del proceso**.
-    # Encadenados aqui y ejecutados en una Lambda, cada contenedor tendria su
-    # propio contador: el techo dejaria de ser `50 x tope` y pasaria a ser
-    # `50 x tope x contenedores`, que es un numero que nadie controla. El limite
-    # por origen del dispensador se diluye igual.
+    # `contador` y `dispensador` son interfaces, no implementaciones concretas, y
+    # existen dos de cada una:
     #
-    # **No es un defecto de estos modulos**: son correctos y estan probados. Es
-    # que el modelo de datos ya tiene resuelto donde viven los dos contadores
-    # -`IDT#<identidad>/INTENTOS#<ventana>` y `ORG#<origen>/PRESTAMOS#<ventana>`,
-    # con `ttl`- y esa mitad todavia no esta escrita. `puertos.py` la tiene
-    # anotada como `contar_intento(...) [I-6]` desde I-1.
+    #   en memoria  -> `ContadorIntentos`, `Dispensador` sin cuota. Para las
+    #                  pruebas, que corren sin motor y sin nube.
+    #   en la tabla -> `ContadorIntentosDynamoDB`, `CuotaOrigenDynamoDB`. Para
+    #                  el despliegue, y **solo** para el despliegue.
     #
-    # **Hasta que exista, esto corre en pruebas y no se despliega.** Escribirlo
-    # aqui es lo unico que impide que un verde de la suite se lea como "listo
-    # para desplegar", que es exactamente el error que este proyecto persigue.
+    # **Desplegar las de memoria seria un control que no controla:** cada
+    # contenedor de Lambda tendria el suyo y el techo dejaria de ser `50 x tope`
+    # para ser `50 x tope x contenedores`, un numero que nadie decide. Lo que
+    # impide ese error no es este comentario: es `test_entrada.py`, que exige
+    # que la raiz de composicion entregue las persistentes.
+    #
+    # Las dos cuentan igual porque las dos llaman a `contador.cubeta()`, y las
+    # dos pasan los mismos casos (`casos_contador.py`). Si divergieran, lo
+    # medido en local no diria nada de lo desplegado.
 
 
 @dataclass(frozen=True)

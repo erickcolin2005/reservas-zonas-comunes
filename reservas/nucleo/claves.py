@@ -21,6 +21,9 @@ from datetime import date
 _ESPACIO = "ESP#"
 _UNIDAD = "UNI#"
 _IDENTIDAD = "IDT#"
+_ORIGEN = "ORG#"
+_INTENTOS = "INTENTOS#"
+_PRESTAMOS = "PRESTAMOS#"
 _DIA = "DIA#"
 _FRANJA = "FRANJA#"
 _AGENDA = "AGENDA#"
@@ -92,17 +95,45 @@ def sk_reserva(dia: date, id_reserva: str) -> str:
     return f"{_RESERVA}{_dia(dia)}#{id_reserva}"
 
 
-# --- Contador de intentos (SEC-1) ------------------------------------------
-# El contador de intentos NO se implementa en I-1: es del incremento I-6.
-# Su forma de clave se declara aqui para que cuando llegue no la componga otro
-# modulo y se rompa la regla 3. Ver `reservas/puertos.py`.
+# --- Los dos contadores de tasa (SEC-1, D-SEC-6) ---------------------------
+# Declarados en I-1 y **implementados en I-6**. La cubeta va en la SK, no en la
+# PK, y esa eleccion es deliberada: con la cubeta en la SK todas las ventanas de
+# una identidad viven en la misma particion, asi que la cubeta vieja y la nueva
+# no reparten la carga por sitios distintos ni obligan a saber cual buscar.
+#
+# La cubeta se formatea con ancho fijo por la regla 2: sin el, `INTENTOS#999` y
+# `INTENTOS#1000` ordenarian al reves de como transcurre el tiempo.
 
 
 def pk_identidad(identidad: str) -> str:
     return f"{_IDENTIDAD}{identidad}"
 
 
+def sk_intentos(cubeta: int) -> str:
+    return f"{_INTENTOS}{cubeta:012d}"
+
+
+def pk_origen(origen: str) -> str:
+    return f"{_ORIGEN}{origen}"
+
+
+def sk_prestamos(cubeta: int) -> str:
+    return f"{_PRESTAMOS}{cubeta:012d}"
+
+
 # --- Lo que necesita el guardia --------------------------------------------
 
-PREFIJOS = (_ESPACIO, _UNIDAD, _IDENTIDAD, _DIA, _FRANJA, _AGENDA, _CUPO, _RESERVA)
+PREFIJOS = (
+    _ESPACIO,
+    _UNIDAD,
+    _IDENTIDAD,
+    _ORIGEN,
+    _INTENTOS,
+    _PRESTAMOS,
+    _DIA,
+    _FRANJA,
+    _AGENDA,
+    _CUPO,
+    _RESERVA,
+)
 """Los prefijos que ningun otro modulo puede escribir. Lo comprueba una prueba."""
