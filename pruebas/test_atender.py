@@ -32,7 +32,7 @@ from reservas.nucleo.modelo import (
 from reservas.puertos import ResultadoEscritura, TipoResultado
 from reservas.sembrado import ESPACIOS
 from reservas.seguridad import prestamo as p
-from reservas.seguridad.contador import ContadorIntentos
+from reservas.seguridad.contador import ContadorIntentos, EnfriamientoActivo
 from reservas.seguridad.prestamo import Dispensador, emitir
 
 ORIGEN = "https://reservas-demo.example"
@@ -94,7 +94,9 @@ class FalsoAdaptador:
         return [ESPACIO for i in ids if i == ESPACIO.id]
 
 
-def deps(adaptador=None, tope=10, tope_por_origen=2) -> Dependencias:
+def deps(
+    adaptador=None, tope=10, tope_por_origen=2, enfriamiento=None
+) -> Dependencias:
     return Dependencias(
         clave=CLAVE,
         adaptador=adaptador or FalsoAdaptador(),
@@ -106,6 +108,7 @@ def deps(adaptador=None, tope=10, tope_por_origen=2) -> Dependencias:
         ),
         espacios=(ESPACIO.id,),
         origen_permitido=ORIGEN,
+        enfriamiento=enfriamiento,
     )
 
 
@@ -474,6 +477,82 @@ def test_la_cuota_por_origen_y_el_lote_imposible_responden_lo_mismo():
 
     assert agotada.codigo == imposible.codigo == 429
     assert agotada.cuerpo == imposible.cuerpo
+
+
+class EnfriamientoFalso:
+    """Deja pasar `admitidas` ejecuciones y despues se niega."""
+
+    def __init__(self, admitidas=1):
+        self.restantes = admitidas
+        self.llamadas = 0
+
+    def consumir(self, ahora):
+        self.llamadas += 1
+        if self.restantes <= 0:
+            raise EnfriamientoActivo("todavia no toca")
+        self.restantes -= 1
+
+
+def peticion_lote(cantidad=2, origen="203.0.113.7") -> borde.PeticionHttp:
+    return borde.PeticionHttp(
+        ruta="/demo/credenciales",
+        metodo="POST",
+        cuerpo={"cantidad": cantidad},
+        origen=origen,
+    )
+
+
+def test_el_enfriamiento_corta_la_segunda_ejecucion_seguida():
+    """D-CE4-1. Una ejecucion son ~400 WCU de golpe sobre 25 sostenidos:
+    funciona por el deposito de rafaga, y el deposito se agota."""
+    d = deps(enfriamiento=EnfriamientoFalso(admitidas=1))
+
+    assert atender(peticion_lote(), d, AHORA).codigo == 200
+    segunda = atender(peticion_lote(), d, AHORA)
+
+    assert segunda.codigo == 429
+    assert segunda.cuerpo["resultado"] == "enfriamiento"
+
+
+def test_el_enfriamiento_se_distingue_de_las_demas_negativas():
+    """A diferencia de las dos causas de `IdentidadNoPrestable`, esta SI se
+    nombra: no hay nada que sondear —el enfriamiento va en el README— y el
+    instrumento necesita distinguirlo para no informar como fallo del sistema
+    lo que es un «vuelve en veinte segundos»."""
+    frenada = atender(
+        peticion_lote(), deps(enfriamiento=EnfriamientoFalso(admitidas=0)), AHORA
+    )
+
+    sin_enfriamiento = deps(tope_por_origen=1)
+    atender(peticion_lote(), sin_enfriamiento, AHORA)  # gasta la cuota
+    agotada = atender(peticion_lote(), sin_enfriamiento, AHORA)
+
+    assert frenada.codigo == agotada.codigo == 429
+    assert frenada.cuerpo["resultado"] == "enfriamiento"
+    assert agotada.cuerpo["resultado"] == "no-prestable"
+
+
+def test_el_enfriamiento_va_antes_de_gastar_la_cuota_de_origen():
+    """Si fuera despues, una ejecucion frenada habria gastado igual la cuota del
+    solicitante: le cobrariamos un lote que nunca recibio."""
+    frenado = EnfriamientoFalso(admitidas=0)
+    d = deps(tope_por_origen=2, enfriamiento=frenado)
+
+    for _ in range(3):
+        assert atender(peticion_lote(), d, AHORA).codigo == 429
+
+    # Cuota intacta: pasado el enfriamiento, los dos lotes siguen disponibles.
+    frenado.restantes = 2
+    assert atender(peticion_lote(), d, AHORA).codigo == 200
+    assert atender(peticion_lote(), d, AHORA).codigo == 200
+
+
+def test_sin_enfriamiento_configurado_el_dispensador_funciona_igual():
+    """`None` es valido y es lo que usan las pruebas. Que sea falso en un
+    despliegue lo vigila `test_entrada.py`, no esto."""
+    d = deps()
+    assert d.enfriamiento is None
+    assert atender(peticion_lote(), d, AHORA).codigo == 200
 
 
 def test_el_dispensador_no_exige_token_pero_tampoco_lo_usa_para_nada():

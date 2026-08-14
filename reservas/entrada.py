@@ -28,7 +28,11 @@ from datetime import timedelta
 from . import config
 from .adaptadores.api_gateway import ahora_local, manejar
 from .adaptadores.borde import cabeceras_cors
-from .adaptadores.contadores import ContadorIntentosDynamoDB, CuotaOrigenDynamoDB
+from .adaptadores.contadores import (
+    ContadorIntentosDynamoDB,
+    CuotaOrigenDynamoDB,
+    EnfriamientoInstrumento,
+)
 from .adaptadores.dynamodb import AdaptadorDynamoDB, crear_cliente
 from .casos_uso.atender import Dependencias
 from .seguridad.contador import comprobar_desigualdad
@@ -74,6 +78,9 @@ def dependencias(entorno=None, cliente=None) -> Dependencias:
     capacidad_borde = int(exigir("RESERVAS_CAPACIDAD_DEL_BORDE", entorno))
     origen_permitido = exigir("RESERVAS_ORIGEN_PERMITIDO", entorno)
     clave = exigir("RESERVAS_CLAVE_FIRMA", entorno).encode()
+    enfriamiento = timedelta(
+        seconds=int(exigir("RESERVAS_ENFRIAMIENTO_SEGUNDOS", entorno))
+    )
 
     comprobar_desigualdad(
         n_identidades=len(activas),
@@ -106,6 +113,10 @@ def dependencias(entorno=None, cliente=None) -> Dependencias:
         ),
         espacios=espacios,
         origen_permitido=origen_permitido,
+        # D-CE4-1. Sin esto el despliegue funciona igual de bien hasta que
+        # alguien ejecuta el instrumento doce veces seguidas y la demo deja de
+        # demostrar. `test_entrada.py` exige que este puesto.
+        enfriamiento=EnfriamientoInstrumento(cliente, enfriamiento, tabla),
     )
 
 

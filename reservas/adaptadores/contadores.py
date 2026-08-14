@@ -38,6 +38,7 @@ from datetime import datetime, timedelta
 from ..nucleo import claves
 from ..seguridad.contador import (
     RUTAS_CONTADAS,
+    EnfriamientoActivo,
     TasaExcedida,
     cubeta,
     fin_de_cubeta,
@@ -173,3 +174,44 @@ class CuotaOrigenDynamoDB:
         return self._cuota.consumido(
             claves.pk_origen(origen), claves.sk_prestamos, ahora
         )
+
+
+class EnfriamientoInstrumento:
+    """D-CE4-1 · el enfriamiento entre ejecuciones del instrumento.
+
+    **Es global, no por origen, y esa es toda la decision.** Lo que protege es el
+    **deposito de rafaga** de la tabla: una ejecucion son ~400 WCU de golpe sobre
+    25 sostenidos, y funciona porque el deposito los absorbe. El deposito es un
+    recurso compartido — **dos desconocidos ejecutando a la vez lo agotan igual
+    que uno ejecutando dos veces**. Un enfriamiento por origen seria el limite
+    de D-SEC-6 otra vez con otro nombre, y no protegeria lo que hay que
+    proteger.
+
+    **Y no evita una factura, evita algo peor de explicar:** en modo
+    aprovisionado pasarse **estrangula, no cobra**. Lo que se pierde al agotar la
+    rafaga es la validez de la medicion. Un visitante que provoque
+    estrangulamiento no ve el sistema fallar: ve **la demo dejar de demostrar**.
+
+    Se implementa como una cuota de **uno por ventana**, que es la misma pieza
+    que los otros dos contadores. Hereda su efecto de frontera —en el cambio de
+    cubeta caben dos ejecuciones seguidas— y se acepta por el mismo motivo: el
+    deposito aguanta unas doce seguidas `[A, extrapolado]`, asi que dos no lo
+    vacian.
+
+    **Vive en el borde y no en el instrumento**, porque un tope que se aplica en
+    el cliente lo quita quien quiera — y el instrumento esta hecho para que un
+    desconocido lo ejecute.
+    """
+
+    def __init__(self, cliente, ventana: timedelta, tabla: str = None):
+        self.ventana = ventana
+        self._cuota = _CuotaEnLaTabla(cliente, tabla or motor.config.TABLA, ventana, 1)
+
+    def consumir(self, ahora: datetime) -> None:
+        if not self._cuota.consumir(
+            claves.pk_instrumento(), claves.sk_enfriamiento, ahora
+        ):
+            raise EnfriamientoActivo(
+                f"el instrumento se enfria {self.ventana} entre ejecuciones "
+                "(D-CE4-1)"
+            )

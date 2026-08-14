@@ -13,6 +13,7 @@ from reservas import entrada
 from reservas.adaptadores.contadores import (
     ContadorIntentosDynamoDB,
     CuotaOrigenDynamoDB,
+    EnfriamientoInstrumento,
 )
 from reservas.seguridad.contador import DesigualdadIncoherente
 
@@ -23,6 +24,7 @@ ENTORNO = {
     "RESERVAS_TOPE_POR_IDENTIDAD": "5",
     "RESERVAS_TOPE_POR_ORIGEN": "2",
     "RESERVAS_CAPACIDAD_DEL_BORDE": "100",
+    "RESERVAS_ENFRIAMIENTO_SEGUNDOS": "20",
     "RESERVAS_ORIGEN_PERMITIDO": "https://reservas-demo.example",
     "RESERVAS_CLAVE_FIRMA": "no-es-un-secreto-real-solo-una-prueba",
 }
@@ -49,6 +51,14 @@ def test_los_dos_contadores_del_despliegue_van_a_la_tabla_y_no_a_la_memoria():
     deps = entrada.dependencias(entorno=ENTORNO, cliente=ClienteDeMentira())
     assert isinstance(deps.contador, ContadorIntentosDynamoDB)
     assert isinstance(deps.dispensador.cuota, CuotaOrigenDynamoDB)
+
+
+def test_el_enfriamiento_del_instrumento_queda_puesto():
+    """D-CE4-1. Sin el, el despliegue funciona igual de bien hasta que alguien
+    ejecuta el instrumento doce veces seguidas, agota el deposito de rafaga y
+    la demo deja de demostrar. `None` es valido en pruebas y falso aqui."""
+    deps = entrada.dependencias(entorno=ENTORNO, cliente=ClienteDeMentira())
+    assert isinstance(deps.enfriamiento, EnfriamientoInstrumento)
 
 
 @pytest.mark.parametrize("ausente", sorted(ENTORNO))

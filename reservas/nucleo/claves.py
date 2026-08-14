@@ -24,6 +24,8 @@ _IDENTIDAD = "IDT#"
 _ORIGEN = "ORG#"
 _INTENTOS = "INTENTOS#"
 _PRESTAMOS = "PRESTAMOS#"
+_INSTRUMENTO = "INS#"
+_ENFRIAMIENTO = "ENFRIAMIENTO#"
 _DIA = "DIA#"
 _FRANJA = "FRANJA#"
 _AGENDA = "AGENDA#"
@@ -121,6 +123,22 @@ def sk_prestamos(cubeta: int) -> str:
     return f"{_PRESTAMOS}{cubeta:012d}"
 
 
+# --- Enfriamiento del instrumento (D-CE4-1) --------------------------------
+# **Una sola particion para todo el sistema, y eso es lo que se quiere.** Lo que
+# este enfriamiento protege es el DEPOSITO DE RAFAGA de la tabla, que es un
+# recurso compartido: dos desconocidos distintos ejecutando a la vez lo agotan
+# igual que uno ejecutando dos veces. Un enfriamiento por origen no protegeria
+# nada — seria el limite de D-SEC-6 otra vez, con otro nombre.
+
+
+def pk_instrumento() -> str:
+    return f"{_INSTRUMENTO}GLOBAL"
+
+
+def sk_enfriamiento(cubeta: int) -> str:
+    return f"{_ENFRIAMIENTO}{cubeta:012d}"
+
+
 # --- Lo que necesita el guardia --------------------------------------------
 
 PREFIJOS = (
@@ -130,6 +148,8 @@ PREFIJOS = (
     _ORIGEN,
     _INTENTOS,
     _PRESTAMOS,
+    _INSTRUMENTO,
+    _ENFRIAMIENTO,
     _DIA,
     _FRANJA,
     _AGENDA,

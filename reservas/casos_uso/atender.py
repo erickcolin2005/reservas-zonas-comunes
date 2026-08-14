@@ -55,7 +55,7 @@ from ..desenlaces import Cubo, Desenlace
 from ..nucleo import tiempo
 from ..nucleo.modelo import Solicitud, TipoOcupacion
 from ..seguridad import prestamo as seg
-from ..seguridad.contador import ContadorIntentos, TasaExcedida
+from ..seguridad.contador import ContadorIntentos, EnfriamientoActivo, TasaExcedida
 from ..seguridad.prestamo import (
     ROL_ADMINISTRACION,
     ROL_RESIDENTE,
@@ -89,6 +89,14 @@ class Dependencias:
     dispensador: Dispensador
     espacios: tuple[str, ...]
     origen_permitido: str
+
+    enfriamiento: object | None = None
+    """D-CE4-1. `None` = sin enfriamiento, que es lo correcto en pruebas y
+    **falso en un despliegue**: sin el, un desconocido puede ejecutar el
+    instrumento en bucle, agotar el deposito de rafaga y empezar a recibir
+    `SYS-CAPACIDAD`. Eso no cuesta dinero —en modo aprovisionado pasarse
+    estrangula, no cobra— pero **invalida la medicion**, que es lo unico que el
+    instrumento existe para producir."""
 
     # ----------------------------------------------------------------------
     # QUE CONTADOR ENTRA AQUI, Y POR QUE IMPORTA MAS DE LO QUE PARECE
@@ -360,6 +368,26 @@ def _credenciales(
         return borde.respuesta_json(
             400, {"resultado": "peticion-mal-formada"}, deps.origen_permitido
         )
+
+    # D-CE4-1 · el enfriamiento va ANTES de prestar, y el orden importa: si
+    # fuera despues, una ejecucion frenada habria gastado igual la cuota de
+    # origen del solicitante — le cobrariamos un lote que nunca recibio.
+    if deps.enfriamiento is not None:
+        try:
+            deps.enfriamiento.consumir(ahora)
+        except EnfriamientoActivo:
+            return borde.respuesta_json(
+                429,
+                {
+                    "resultado": "enfriamiento",
+                    "aviso": (
+                        "El instrumento se enfria entre ejecuciones para no "
+                        "agotar el deposito de rafaga de la tabla. No es un "
+                        "fallo del sistema de reservas: vuelve a intentarlo."
+                    ),
+                },
+                deps.origen_permitido,
+            )
 
     origen_solicitante = peticion.origen or "desconocido"
     try:

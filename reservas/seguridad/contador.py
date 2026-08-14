@@ -80,6 +80,22 @@ class TasaExcedida(Exception):
     """
 
 
+class EnfriamientoActivo(Exception):
+    """D-CE4-1 · el instrumento todavia no puede volver a ejecutarse.
+
+    **Se distingue de las demas negativas a proposito.** Las dos causas de
+    `IdentidadNoPrestable` se responden iguales porque distinguirlas dejaria
+    sondear el tamano del conjunto cerrado o la cuota restante. Aqui no hay nada
+    que sondear: el enfriamiento es un dato publico del despliegue, va en el
+    README, y **el instrumento necesita poder distinguirlo** — si no, informaria
+    como fallo del sistema lo que es un "vuelve en veinte segundos".
+
+    Vive en este modulo y no en el adaptador que lo implementa porque el caso de
+    uso tiene que poder capturarla, y un caso de uso que importa de un adaptador
+    tiene la flecha de dependencia al reves.
+    """
+
+
 def cubeta(ahora: datetime, ventana: timedelta) -> int:
     """La cubeta de ventana fija a la que pertenece un instante.
 
