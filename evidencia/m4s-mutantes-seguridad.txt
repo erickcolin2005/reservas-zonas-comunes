@@ -4,11 +4,12 @@ Los dos mutantes de seguridad — extension de M4 (SEC-1, SEC-2)
   Criterio invertido: un mutante que SOBREVIVE rompe el build, porque
   significa que ningun test vigila ese control.
 
-  CONTROL test_prestamo.py     20 passed in 0.04s
-  CONTROL test_contador.py     14 passed in 0.03s
+  CONTROL test_prestamo.py     20 passed in 0.03s
+  CONTROL test_contador.py     15 passed in 0.02s
+  CONTROL test_atender.py      23 passed in 0.04s
 
-  [ROJO ] apagar el AUTORIZADOR   5 failed, 15 passed in 0.20s
-  [ROJO ] apagar el CONTADOR      4 failed, 10 passed in 0.04s
+  [ROJO ] apagar el AUTORIZADOR   10 failed, 33 passed in 0.18s
+  [ROJO ] apagar el CONTADOR      7 failed, 31 passed in 0.07s
 
 ======================================================================
 VEREDICTO: PASA — apagar el autorizador o el contador rompe las pruebas. Los dos controles estan vigilados.

@@ -287,7 +287,7 @@ class AdaptadorDynamoDB:
         Consistencia fuerte en las cinco: de ellas depende la ATRIBUCION de la
         regla, nunca la correccion (ADR-02, ADR-23).
         """
-        parametros = self._leer_espacio(solicitud.espacio)
+        parametros = self.leer_espacio(solicitud.espacio)
         unidad = self._leer_unidad(solicitud.unidad)
         ocupacion = self.leer_ocupacion_dia(solicitud.espacio, solicitud.dia)
         agenda = self._leer_agenda(solicitud.unidad, solicitud.dia)
@@ -304,7 +304,12 @@ class AdaptadorDynamoDB:
             cupo_consumido=cupo,
         )
 
-    def _leer_espacio(self, espacio: str) -> ParametrosEspacio | None:
+    def leer_espacio(self, espacio: str) -> ParametrosEspacio | None:
+        """Los parametros de un espacio, leidos del item `ESP#.../META`.
+
+        **Publico desde I-6** porque las rutas de lectura lo necesitan: era
+        privado cuando el unico consumidor era `leer_estado`.
+        """
         r = self.cliente.get_item(
             TableName=self.tabla,
             Key={"PK": S(claves.pk_espacio(espacio)), "SK": S(claves.sk_meta())},
@@ -327,6 +332,34 @@ class AdaptadorDynamoDB:
             plazo_cancelacion_horas=int(item["plazo_cancelacion_horas"]["N"]),
             habilitado=item["habilitado"]["BOOL"],
         )
+
+    def leer_espacios(self, ids) -> list[ParametrosEspacio]:
+        """El catalogo de espacios (RF-01), leido item a item de la tabla.
+
+        **`ids` llega como DATO, igual que `activas` en el dispensador**, y por
+        el mismo motivo: asi este metodo no puede devolver un espacio que no
+        este declarado en la configuracion del despliegue.
+
+        ------------------------------------------------------------------
+        DISCREPANCIA CON EL DISENO, declarada y no disimulada
+        ------------------------------------------------------------------
+        `modelo-datos.md` §P-1 resuelve RF-01 con *«una Query de los META de
+        espacio»*. **Eso no es ejecutable sobre este modelo:** cada espacio es
+        su propia particion (`ESP#<id>` / `META`), y una `Query` necesita una
+        PK concreta — no puede recorrer particiones. Las alternativas reales
+        eran un `Scan` (que crece con la tabla entera, no con el numero de
+        espacios) o un indice secundario, **prohibido por ADR-24**.
+
+        Se elige `GetItem` por id sobre una lista declarada: coste fijo, tres
+        lecturas, sin indice y sin `Scan`. **Se reporta a `architect-agent`**
+        para que §P-1 diga lo que el modelo permite.
+        """
+        salida = []
+        for identificador in ids:
+            parametros = self.leer_espacio(identificador)
+            if parametros is not None:
+                salida.append(parametros)
+        return salida
 
     def _leer_unidad(self, unidad: str) -> Unidad | None:
         r = self.cliente.get_item(

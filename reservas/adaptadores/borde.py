@@ -73,8 +73,29 @@ class PeticionHttp:
     ruta: str
     metodo: str
     cuerpo: dict = field(default_factory=dict)
-    identidad: str | None = None
     origen: str | None = None
+
+    autorizacion: str | None = None
+    """El token **tal como llego, sin verificar**. Lo pone el traductor.
+
+    Es lo unico de esta clase que un desconocido controla, y por eso esta
+    separado de `identidad`: mezclarlos en un campo haria que el mismo nombre
+    significara *lo que alguien dijo ser* antes de la comprobacion y *lo que se
+    demostro que es* despues. Esa confusion es como se construyen los sistemas
+    que confian en datos que un atacante escribio.
+
+    **`atender` lo pone a `None` en cuanto verifica**: pasada la frontera de
+    autenticacion, nada aguas abajo puede volver a ver el token en claro.
+    """
+
+    identidad: str | None = None
+    """La identidad **ya probada** (ADR-26). La rellena `atender` tras verificar
+    la firma; **el traductor nunca la toca**, porque en el momento de traducir
+    todavia no se ha comprobado nada."""
+
+    parametros_ruta: dict = field(default_factory=dict)
+    """Lo que la plantilla de ruta captura (`{id}`). Se guarda aparte del cuerpo
+    porque viene del camino, no de lo que el cliente escribio."""
 
 
 @dataclass(frozen=True)
@@ -82,6 +103,17 @@ class RespuestaHttp:
     codigo: int
     cuerpo: dict
     cabeceras: dict = field(default_factory=dict)
+
+
+def respuesta_json(codigo: int, cuerpo: dict, origen_permitido: str) -> RespuestaHttp:
+    """Una respuesta que **no** viene de un desenlace de dominio.
+
+    Existe para las rutas de lectura y para el dispensador, que no producen
+    `Desenlace` y por tanto no pasan por `respuesta_de`. Se mantiene aparte a
+    proposito: la frontera del 200 gobierna los desenlaces, y meter aqui esas
+    rutas haria creer que tambien las gobierna a ellas.
+    """
+    return RespuestaHttp(codigo, cuerpo, cabeceras_cors(origen_permitido))
 
 
 def cabeceras_cors(origen_permitido: str) -> dict:

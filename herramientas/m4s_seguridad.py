@@ -51,12 +51,12 @@ def _apagado(modulo, nombre: str, sustituto):
         setattr(modulo, nombre, original)
 
 
-def _correr(fichero: str) -> tuple[int, str]:
-    """Ejecuta un fichero de pruebas y devuelve (codigo, salida)."""
+def _correr(*ficheros: str) -> tuple[int, str]:
+    """Ejecuta uno o varios ficheros de pruebas y devuelve (codigo, salida)."""
     captura = io.StringIO()
+    rutas = [str(RAIZ / "pruebas" / f) for f in ficheros]
     with contextlib.redirect_stdout(captura), contextlib.redirect_stderr(captura):
-        codigo = pytest.main(["-q", "--no-header", "-p", "no:cacheprovider",
-                              str(RAIZ / "pruebas" / fichero)])
+        codigo = pytest.main(["-q", "--no-header", "-p", "no:cacheprovider", *rutas])
     return int(codigo), captura.getvalue()
 
 
@@ -80,8 +80,8 @@ def main() -> int:
         "",
     ]
 
-    # Control: sin mutar, los dos ficheros tienen que estar en verde.
-    for fichero in ("test_prestamo.py", "test_contador.py"):
+    # Control: sin mutar, los tres ficheros tienen que estar en verde.
+    for fichero in ("test_prestamo.py", "test_contador.py", "test_atender.py"):
         codigo, salida = _correr(fichero)
         lineas.append(f"  CONTROL {fichero:<20} {_resumen(salida)}")
         if codigo != 0:
@@ -99,9 +99,17 @@ def main() -> int:
     def verificar_apagado(token, clave, ahora):
         return p.Prestamo(unidad="U-101", rol=p.ROL_RESIDENTE, expira=2 ** 31)
 
+    # Se corre tambien `test_atender.py`, y eso es lo que anadio I-6.
+    #
+    # Con solo `test_prestamo.py`, el mutante prueba que el autorizador
+    # FUNCIONA. No prueba que este ENCHUFADO: alguien podria borrar la llamada
+    # a `verificar` del caso de uso, dejar el modulo intacto, y este mutante
+    # seguiria saliendo rojo con el borde abierto de par en par. Es el patron
+    # T-14 —un control que existe y cuya actuacion no esta medida— aplicado al
+    # cableado en vez de al control.
     with _apagado(p, "verificar", verificar_apagado), \
          _apagado(p, "exigir_rol", lambda prestamo, rol: None):
-        codigo, salida = _correr("test_prestamo.py")
+        codigo, salida = _correr("test_prestamo.py", "test_atender.py")
     estado = "ROJO " if codigo != 0 else "VERDE"
     lineas.append(f"  [{estado}] apagar el AUTORIZADOR   {_resumen(salida)}")
     if codigo == 0:
@@ -111,7 +119,7 @@ def main() -> int:
     # `registrar` no cuenta nada y nunca levanta: el techo 50 x tope vuelve a
     # ser infinito sin que ninguna llamada falle.
     with _apagado(c.ContadorIntentos, "registrar", lambda self, u, r, a: None):
-        codigo, salida = _correr("test_contador.py")
+        codigo, salida = _correr("test_contador.py", "test_atender.py")
     estado = "ROJO " if codigo != 0 else "VERDE"
     lineas.append(f"  [{estado}] apagar el CONTADOR      {_resumen(salida)}")
     if codigo == 0:
