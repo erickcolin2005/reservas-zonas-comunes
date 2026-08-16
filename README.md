@@ -393,6 +393,7 @@ cincuenta simultáneas salen igual, y esa misma medición lo enseña.
 | | |
 |---|---|
 | **Cuánto vive** | Mientras yo la mantenga, y no más. La instancia gratuita duerme a los 15 minutos y el plan da 750 horas al mes. **No hay compromiso de que este enlace siga aquí**, y por eso no es el entregable |
+| **Qué NO guarda** | Al dormirse arranca de nuevo y resiembra: **lo que reserves ahí no sobrevive** —comprobado, no supuesto—. Es intencionado: así el siguiente que llegue encuentra las franjas libres en vez de una demo agotada por el anterior |
 | **La evidencia** | [`evidencia/demo-publica-desplegada.txt`](evidencia/demo-publica-desplegada.txt) — desplegada y medida por internet: 50 lanzadas, **50 competidoras efectivas, 1 confirmada, 20 RR-11**, con las 50 en vuelo a la vez. Sobrevive al enlace |
 | **El IaC** | [`render.yaml`](render.yaml) levanta esto, e [`infra/`](infra/) levanta la versión de AWS. Los dos con un comando, en una cuenta limpia |
 

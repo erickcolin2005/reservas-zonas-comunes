@@ -62,7 +62,9 @@ Lo que esto NO demuestra:
     serializa mas que el motor real. La afirmacion central del proyecto se
     apoya en `k-motor-real.txt`.
 
-  - NO mide el despertar tras dormir. La instancia gratuita escala a cero
-    tras 1 hora sin trafico y no se puede desactivar. Si al despertar el
-    contenedor arranca de nuevo, se pagan estos 53-71 s; si se reanuda desde
-    una instantanea de la VM, no. **No se sabe, y se observa desplegando.**
+  - NO mide el despertar tras dormir. **RESPONDIDO el 2026-08-16 sobre el
+    despliegue real, en `demo-publica-desplegada.txt` §P7:** el contenedor
+    ARRANCA DE NUEVO y resiembra, no se reanuda desde una instantanea. Se
+    comprobo por lo que hace y no por el reloj — una franja reservada antes
+    de dormir aparece libre despues—. El arranque tras dormir tardo 25 s,
+    mas rapido que el primero porque la imagen ya esta en la maquina.

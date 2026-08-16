@@ -95,3 +95,31 @@ Lo que esto NO demuestra:
   - NO promete que el enlace siga vivo. La instancia duerme a los 15
     minutos, el plan tiene 750 horas al mes, y el entregable de este
     proyecto nunca fue la URL: es el IaC y la evidencia.
+
+======================================================================
+P7 · QUE PASA AL DESPERTAR — la pregunta que quedo abierta, respondida
+
+  `contenedor-en-una-decima-de-cpu.txt` cerraba diciendo: *"si al despertar
+  el contenedor arranca de nuevo se pagan estos 53-71 s; si se reanuda desde
+  una instantanea, no. No se sabe, y se observa desplegando"*. Observado.
+
+  Tras un rato sin trafico, la primera peticion tardo **25 s** — ni los
+  0.27 s de estar despierta, ni los 52 s del arranque inicial. Pero el
+  tiempo no era la prueba. Esta si:
+
+    GET /espacios/E-CAN/disponibilidad?dia=2026-08-16
+    ->  la franja de las 10 aparece LIBRE
+
+  Esa franja la habia reservado el instrumento un rato antes (P4), y la
+  reserva ya no esta. **El contenedor arranca de nuevo y resiembra; no se
+  reanuda desde una instantanea.** Los 25 s son un arranque real, mas rapido
+  que el primero porque la imagen ya esta en la maquina.
+
+  LO QUE ARREGLA SOLO, y no lo arreglo nadie: el segundo visitante ya no se
+  encuentra la franja reservada por el primero. Cada vez que la instancia
+  duerme, la demo vuelve a su estado limpio — sin proceso que limpie nada y
+  sin que nadie tenga que acordarse.
+
+  LO QUE CUESTA, escrito al lado: **lo que un visitante reserve no
+  sobrevive.** Esta demo no guarda nada, y no sirve para enseñar nada que
+  dependa de que persista.
