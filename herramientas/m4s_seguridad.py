@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import pathlib
 import sys
 
@@ -38,6 +39,12 @@ import pytest
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
 EVIDENCIA = RAIZ / "evidencia"
+
+# Misma puerta que en `pruebas/conftest.py`, y por la misma razon: el informe
+# lleva la duracion de cada pytest, asi que reescribirlo en cada corrida local
+# deja un diff de decimas de segundo que parece un cambio y no lo es. El texto
+# se imprime siempre; lo que se guarda solo cuando se pide.
+ESCRIBIR_EVIDENCIA = os.environ.get("RESERVAS_EVIDENCIA") == "1"
 
 
 @contextlib.contextmanager
@@ -144,8 +151,11 @@ def main() -> int:
     ]
     texto = "\n".join(lineas)
     print(texto)
-    EVIDENCIA.mkdir(exist_ok=True)
-    (EVIDENCIA / "m4s-mutantes-seguridad.txt").write_text(texto + "\n", encoding="utf-8")
+    if ESCRIBIR_EVIDENCIA:
+        EVIDENCIA.mkdir(exist_ok=True)
+        (EVIDENCIA / "m4s-mutantes-seguridad.txt").write_text(
+            texto + "\n", encoding="utf-8"
+        )
     return 1 if sobrevivientes else 0
 
 

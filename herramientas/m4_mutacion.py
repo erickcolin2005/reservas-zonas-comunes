@@ -37,6 +37,7 @@ Uso:  python -m herramientas.m4_mutacion
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import sys
@@ -45,6 +46,13 @@ import types
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
 FUENTE = RAIZ / "reservas" / "nucleo" / "reglas.py"
 EVIDENCIA = RAIZ / "evidencia"
+
+# Misma puerta que en `pruebas/conftest.py`. Aqui el informe es determinista y
+# hoy no produciria ruido, pero la regla es "una corrida local no toca la
+# constancia del repositorio": si vale para unas herramientas y no para otras,
+# no es una regla, es una coincidencia que se rompe el dia que este informe
+# gane un numero que cambie.
+ESCRIBIR_EVIDENCIA = os.environ.get("RESERVAS_EVIDENCIA") == "1"
 
 ANCLA = re.compile(r"^\s*# \[M4:([A-Z0-9\-]+)\]\s*$")
 
@@ -257,8 +265,11 @@ def main(argv=None) -> int:
     ]
     texto = "\n".join(lineas)
     print(texto)
-    EVIDENCIA.mkdir(exist_ok=True)
-    (EVIDENCIA / "m4-mutacion-reglas.txt").write_text(texto + "\n", encoding="utf-8")
+    if ESCRIBIR_EVIDENCIA:
+        EVIDENCIA.mkdir(exist_ok=True)
+        (EVIDENCIA / "m4-mutacion-reglas.txt").write_text(
+            texto + "\n", encoding="utf-8"
+        )
     return 1 if sobrevivientes else 0
 
 

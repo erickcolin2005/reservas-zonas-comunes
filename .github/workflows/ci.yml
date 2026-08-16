@@ -23,6 +23,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # Aqui SI se escribe la evidencia, y por eso hay que pedirlo: fuera del CI
+    # una corrida reescribiria los ficheros del repositorio con un diff de
+    # milisegundos que parece un cambio de resultado. Aqui la constancia es el
+    # producto -se sube como artefacto abajo, tambien cuando algo falla-, asi
+    # que la puerta se abre para todo el trabajo de una vez.
+    env:
+      RESERVAS_EVIDENCIA: "1"
+
     steps:
       - uses: actions/checkout@v4
 

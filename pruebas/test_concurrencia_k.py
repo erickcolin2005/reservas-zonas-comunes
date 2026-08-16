@@ -25,7 +25,7 @@ import pytest
 
 from herramientas import casos_k
 
-from .conftest import guardar_evidencia
+from .conftest import EN_EL_CI, guardar_evidencia
 
 pytestmark = [pytest.mark.motor, pytest.mark.lento]
 
@@ -69,7 +69,10 @@ def resultados(request):
     salida = {n: _correr(n, cliente, endpoint, t0) for n in ("K-01", "K-02", "K-03")}
     guardar_evidencia(
         "casos-k.txt",
-        "Casos K contra el sustituto local — ultima ejecucion del CI\n"
+        # Donde corrio, no donde se supone que corrio: la cabecera decia
+        # "ultima ejecucion del CI" tambien cuando la escribia una corrida local.
+        "Casos K contra el sustituto local — "
+        f"{'ultima ejecucion del CI' if EN_EL_CI else 'ejecucion local'}\n"
         f"T0 derivado: {t0.isoformat()}\n\n"
         + "\n".join(r.texto for r, _ in salida.values()),
     )
