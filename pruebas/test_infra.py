@@ -205,6 +205,42 @@ def test_render_no_pone_la_llave_del_motor_real():
     assert "RESERVAS_MOTOR_REAL" not in RENDER_SIN_COMENTARIOS
 
 
+def test_render_fija_el_puerto_publico_y_no_es_el_del_motor():
+    """El guardia mas importante de este fichero, y el que menos lo parece.
+
+    En el contenedor hay dos puertos abiertos: el del servidor y el del motor.
+    El alojamiento escanea y enruta **uno**. Si acertara con el del motor, la
+    demo publicaria **DynamoDB en crudo**: cualquiera leeria y escribiria la
+    tabla saltandose el autorizador, el contador y las quince reglas. No es un
+    fallo de disponibilidad, es la superficie entera de seguridad rodeada por un
+    puerto adivinado.
+
+    El primer despliegue lo enseno en su log -`Detected a new open port
+    HTTP:8000`- cuando el servidor murio por otra causa y el motor quedo solo.
+    """
+    declarado = re.search(r"^\s*-\s*key:\s*PORT\s*$", RENDER_FUENTE, re.M)
+    assert declarado, (
+        "`render.yaml` no fija PORT: el alojamiento elegiria puerto por su "
+        "cuenta, y uno de los candidatos es el motor de datos"
+    )
+
+    valor = re.search(
+        r"^\s*-\s*key:\s*PORT\s*\n\s*value:\s*\"?(\d+)\"?\s*$", RENDER_FUENTE, re.M
+    )
+    assert valor, "PORT esta declarada sin valor literal"
+
+    arranque = (
+        pathlib.Path(__file__).resolve().parent.parent / "arranque.sh"
+    ).read_text(encoding="utf-8")
+    del_motor = re.search(r"-port\s+(\d+)", arranque)
+    assert del_motor, "no se encuentra el puerto del motor en `arranque.sh`"
+
+    assert valor.group(1) != del_motor.group(1), (
+        f"el puerto publico y el del motor son el mismo ({valor.group(1)}): el "
+        "alojamiento serviria la base de datos en vez de la aplicacion"
+    )
+
+
 def test_el_health_check_apunta_a_una_ruta_que_el_servidor_sirve():
     """La costura que nadie revisa hasta que el despliegue no levanta.
 

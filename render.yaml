@@ -64,6 +64,28 @@ services:
     # del README.
     # -----------------------------------------------------------------------
     envVars:
+      # -------------------------------------------------------------------
+      # EL PUERTO SE FIJA, Y NO ES UNA PREFERENCIA: ES SEGURIDAD
+      # -------------------------------------------------------------------
+      # Dentro del contenedor hay DOS puertos abiertos: el 8080 del servidor y
+      # el **8000 de DynamoDB Local**, que `arranque.sh` levanta primero.
+      #
+      # Render escanea puertos y enruta UNO. Su documentacion lo dice: *"if your
+      # service does bind to multiple ports, always bind your public HTTP server
+      # to the value of the PORT environment variable"*, y declararla impide que
+      # exponga los demas. El primer despliegue fallido ya enseno el riesgo en el
+      # log: `Detected a new open port HTTP:8000`.
+      #
+      # Si Render enrutara al 8000, la demo publicaria **el motor de datos en
+      # crudo**: cualquiera leeria y escribiria la tabla saltandose el
+      # autorizador, el contador y las reglas. Todo el trabajo de SEC-1 y SEC-2
+      # se rodearia por un puerto mal adivinado.
+      #
+      # `test_infra.py` comprueba que esto este puesto y que no coincida con el
+      # puerto del motor.
+      - key: PORT
+        value: "8080"
+
       - key: RESERVAS_ESPACIOS
         value: E-SAL,E-BBQ,E-CAN
 
