@@ -392,6 +392,47 @@ Y cuando el enlace desaparezca, este README no habrá que editarlo, porque el
 enlace nunca se publicó solo: siempre acompañado de su fecha de caducidad, de la
 evidencia y del comando que reconstruye todo.
 
+### 6.2 · Lo que hay que darle al sistema para que arranque
+
+Esta sección existe porque el código la exige por su nombre: cuando falta un
+parámetro, el mensaje de error dice *«no hay valor por defecto: quien lo fija lo
+declara en el README»* — y hasta hoy el README no las declaraba. **Se añade
+anotando el hueco, no fingiendo que no estuvo.**
+
+Ninguno de estos ocho tiene valor por defecto, ni en la imagen ni en la función.
+No es rigidez: un despliegue con una variable mal puesta arrancaría con un valor
+de demostración y **parecería configurado**. La diferencia entre «falla» y «no
+arranca» es quién se entera.
+
+| Variable | Qué fija | Valor de la demo pública |
+|---|---|---|
+| `RESERVAS_ESPACIOS` | Qué espacios existen | `E-SAL,E-BBQ,E-CAN` |
+| `RESERVAS_VENTANA_SEGUNDOS` | La ventana que comparten los dos contadores. **Fija, no deslizante** | `300` |
+| `RESERVAS_TOPE_POR_IDENTIDAD` | Intentos que una identidad puede hacer por ventana | `5` |
+| `RESERVAS_TOPE_POR_ORIGEN` | Lotes de identidades que un mismo origen puede pedir prestados por ventana | `20` |
+| `RESERVAS_CAPACIDAD_DEL_BORDE` | Lo que el borde deja pasar en esa misma ventana | `250` |
+| `RESERVAS_ENFRIAMIENTO_SEGUNDOS` | Espera entre ejecuciones del instrumento | `20` |
+| `RESERVAS_ORIGEN_PERMITIDO` | El único origen que CORS admite. Nunca `*` | La URL pública, con `https://` y sin barra final |
+| `RESERVAS_CLAVE_FIRMA` | Firma las credenciales que presta el dispensador | Un secreto generado, distinto en cada despliegue |
+
+**Los 250 no son un número redondo elegido a ojo.** El sistema comprueba **al
+arrancar** que `identidades × tope ≤ capacidad del borde`, y el sembrado crea 50
+unidades activas: 50 × 5. Si la desigualdad no se cumple, no arranca — porque
+entonces el borde rechazaría antes que el contador, el instrumento empezaría a
+recibir errores de tasa y **la medición se invalidaría sin que nadie hubiera
+tocado el contador**. Es una desigualdad que hay que verificar, y una desigualdad
+que hay que acordarse de verificar es una que un día no se verifica.
+
+**En tu máquina no hace falta teclear nada de esto:** `--desarrollo` rellena los
+huecos con estos mismos valores. Rellena solo los huecos — lo que el entorno diga
+sigue mandando, porque al revés un despliegue mal configurado arrancaría en modo
+demostración sin decirlo.
+
+**Y el fallo que no se parece a su causa:** si `RESERVAS_ORIGEN_PERMITIDO` no
+coincide **exactamente** con el origen desde el que se sirve la página, la página
+carga, se ve entera y no hace nada. No aparece ningún error: el navegador bloquea
+la llamada por CORS y el servidor ni se entera de que alguien lo intentó.
+
 ---
 
 ## 7 · Lo que cuesta, y cómo se sabe que no va a costar más

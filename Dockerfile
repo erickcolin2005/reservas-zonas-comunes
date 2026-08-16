@@ -27,7 +27,37 @@
 # `evidencia/k-motor-real.txt`. Esto sirve para que puedas intentarlo tu.
 #
 #   docker build -t reservas .
-#   docker run -p 8080:8080 -e RESERVAS_ORIGEN_PERMITIDO=http://localhost:8080 reservas
+#   docker run -p 8080:8080 \
+#     -e RESERVAS_ESPACIOS=E-SAL,E-BBQ,E-CAN \
+#     -e RESERVAS_VENTANA_SEGUNDOS=300 \
+#     -e RESERVAS_TOPE_POR_IDENTIDAD=5 \
+#     -e RESERVAS_TOPE_POR_ORIGEN=20 \
+#     -e RESERVAS_CAPACIDAD_DEL_BORDE=250 \
+#     -e RESERVAS_ENFRIAMIENTO_SEGUNDOS=20 \
+#     -e RESERVAS_ORIGEN_PERMITIDO=http://localhost:8080 \
+#     -e RESERVAS_CLAVE_FIRMA="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')" \
+#     reservas
+#
+# ---------------------------------------------------------------------------
+# NO HAY VERSION CORTA DE ESE COMANDO, Y ESO TAMBIEN ES A PROPOSITO
+# ---------------------------------------------------------------------------
+# `arranque.sh` NO pasa `--desarrollo`: la configuracion sale del entorno igual
+# que en Lambda, y **ninguna de esas ocho variables tiene valor por defecto**. Si
+# falta una, el contenedor no arranca y dice cual falta — que es lo que se quiere,
+# porque un valor de demostracion en un despliegue **parece configurado**.
+#
+# Este comentario nacio pasando solo RESERVAS_ORIGEN_PERMITIDO, y con eso el
+# contenedor **moria con `falta RESERVAS_ESPACIOS`**. Se deja escrito en vez de
+# corregirlo en silencio: un comando documentado que no funciona es la misma clase
+# de texto falso que el resto de este fichero persigue, cometida en el commit que
+# lo perseguia.
+#
+# Las ocho estan declaradas en **§6.2 del README** con lo que fija cada una.
+# `RESERVAS_ENDPOINT` y `PORT` no van en la lista porque ya vienen en la imagen.
+#
+# Y los 250 no son un numero elegido a ojo: el sistema comprueba al arrancar que
+# `identidades x tope <= capacidad del borde`, y el sembrado crea 50 unidades
+# activas. 50 x 5 = 250.
 
 # El motor sale de la MISMA imagen que usan el CI y las pruebas locales, no de
 # una descarga aparte.
