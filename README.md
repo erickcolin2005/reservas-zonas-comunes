@@ -97,20 +97,24 @@ que se rechaza por la regla equivocada cuenta como fallo, no como acierto.
 ## 2 · Qué se va a poder comprobar, y quién lo comprueba
 
 La columna de estado es la que dice la verdad hoy, y es la que va cambiando.
-*Actualizada el 2026-08-14.*
+*Actualizada el 2026-08-16.*
+
+> **La demo está en pie:** **https://reservas-zonas-comunes.onrender.com**
+>
+> Léela con sus tres condiciones, que están en [§6.1](#61--dónde-vive-la-demo-pública-y-por-qué-no-en-aws) y no son letra pequeña: **tarda cerca de un minuto en despertar** porque la máquina gratuita duerme; **no corre sobre DynamoDB** sino sobre su sustituto local; y **el enlace no es el entregable** —lo son el IaC y la evidencia, que no caducan—.
 
 | # | Conducta | Cómo se comprueba sin creerme nada | Estado |
 |---|---|---|---|
-| 1 | Peticiones simultáneas al mismo hueco → **exactamente una** confirmada; el resto rechazadas nombrando su regla | **Ejecutas tú el comando** contra el sistema, tuyo o desplegado | ✅ **Construido.** Falta el enlace público |
-| 2 | Una reserva que viola una regla → rechazo que dice **cuál** regla | Lo intentas en la interfaz, sin instrucciones | ✅ **Construido.** Falta el enlace público |
+| 1 | Peticiones simultáneas al mismo hueco → **exactamente una** confirmada; el resto rechazadas nombrando su regla | **Ejecutas tú el comando** contra el sistema, tuyo o desplegado | ✅ **Construido y en pie**, con su medición por internet |
+| 2 | Una reserva que viola una regla → rechazo que dice **cuál** regla | Lo intentas en la interfaz, sin instrucciones | ✅ **Construido y en pie**, con su medición por internet |
 | 3 | La prueba de concurrencia **rompe el build** ante una sola confirmación de más | Miras el historial de integración continua, no la prosa | ✅ En verde en cada empujón |
 | 4 | **Apagar una regla a propósito tumba el build** | Miras las herramientas que las apagan, una por una | ✅ Las quince reglas, y también los dos controles de seguridad |
 | 5 | Tabla de carga publicada **con los números reales, buenos o malos** | Lees §3 | ⬜ Sin medir |
 | 6 | **Arranque en frío declarado aparte**, no escondido dentro de un promedio | Lees §3 | ⬜ Sin medir |
 | 7 | Freno de gasto **probado** antes del primer recurso, caducidad declarada, y un comando que reconstruye el sistema entero | Lees §6 y §7, y el directorio `infra/` | 🟡 **El freno, probado.** El IaC del borde, escrito y sin ejecutar |
 
-**Para la 1 y la 2 no hace falta esperar al enlace.** El sistema entero corre en
-tu máquina, sin cuenta de nube y sin registrarte en nada:
+**Y para la 1 y la 2 ni siquiera hace falta el enlace.** El sistema entero corre
+en tu máquina, sin cuenta de nube y sin registrarte en nada:
 
 ```bash
 python -m herramientas.servidor --desarrollo --sembrar     # en una terminal
@@ -382,6 +386,21 @@ así que es probable que esperes cerca de un minuto. No es el sistema siendo
 lento: es una máquina de cero euros despertándose. Con el sistema ya en pie, las
 cincuenta simultáneas salen igual, y esa misma medición lo enseña.
 
+#### El enlace, con las tres cosas que nunca lo acompañan por separado
+
+**https://reservas-zonas-comunes.onrender.com**
+
+| | |
+|---|---|
+| **Cuánto vive** | Mientras yo la mantenga, y no más. La instancia gratuita duerme a los 15 minutos y el plan da 750 horas al mes. **No hay compromiso de que este enlace siga aquí**, y por eso no es el entregable |
+| **La evidencia** | [`evidencia/demo-publica-desplegada.txt`](evidencia/demo-publica-desplegada.txt) — desplegada y medida por internet: 50 lanzadas, **50 competidoras efectivas, 1 confirmada, 20 RR-11**, con las 50 en vuelo a la vez. Sobrevive al enlace |
+| **El IaC** | [`render.yaml`](render.yaml) levanta esto, e [`infra/`](infra/) levanta la versión de AWS. Los dos con un comando, en una cuenta limpia |
+
+Lo primero que vas a querer hacer es intentar romperlo, y para eso está: apunta
+el instrumento de §2 a esa URL y mira el reparto completo. **Espera a que la
+página responda antes de lanzarlo** — si lo disparas mientras la máquina
+despierta, verás menos de cincuenta competidoras y no será culpa del sistema.
+
 ---
 
 O sea que **el enlace de la demo se va a morir de todas formas**, y se sabe antes
@@ -540,13 +559,13 @@ termina exigiendo que se corrija cada vez. Queda anotado.*
 | Qué | Hoy |
 |---|---|
 | Código | Núcleo puro, adaptadores, frontera HTTP, seguridad, instrumento e interfaz |
-| Pruebas | **406 en verde**, más tres suites de mutación que las ponen en rojo a propósito |
+| Pruebas | **407 en verde**, más tres suites de mutación que las ponen en rojo a propósito |
 | Integración continua | En verde en cada empujón, en una máquina que no es la mía |
 | Cuenta de AWS | Abierta. **En Plan de Pago y sin créditos**, contra lo que se había decidido (§6) |
 | Guardarraíl de costos | Desplegado **antes que ningún otro recurso**, y probado: deniega y nombra su causa |
 | Motor real | La tabla existe y el mecanismo está verificado contra ella |
 | Despliegue del borde | **Escrito y sin ejecutar.** El IaC está en `infra/`, el procedimiento también |
-| Demo | No existe todavía. El despliegue está **declarado** en `render.yaml` y sin ejecutar; irá fuera de AWS y con su caducidad declarada (§6.1) |
+| Demo | **En pie**, fuera de AWS: `reservas-zonas-comunes.onrender.com`. Declarada en `render.yaml`, medida por internet, y con sus tres condiciones en §6.1 |
 | Evidencia visual grabada | **Pendiente, y es lo único irreversible**: si la cuenta muere sin ella, no se recupera |
 | Tablas de §3 | Con las cifras de concurrencia dentro. **Las de carga y latencia siguen en blanco**, y por eso están ahí |
 

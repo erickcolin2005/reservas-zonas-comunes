@@ -234,6 +234,30 @@ def test_el_origen_de_cors_es_la_url_que_el_propio_servicio_va_a_tener():
     )
 
 
+def test_el_enlace_del_readme_es_el_dominio_que_el_despliegue_produce():
+    """El tercer sitio donde vive la misma URL, y el mas visible.
+
+    El README publica el enlace. Si el servicio se renombra, el dominio cambia y
+    **el README se queda apuntando a un sitio muerto** — en el artefacto mas
+    leido del repositorio, que es justo donde este proyecto ya se equivoco una
+    vez y quedo escrito en §6 y §9.
+    """
+    readme = (
+        pathlib.Path(__file__).resolve().parent.parent / "README.md"
+    ).read_text(encoding="utf-8")
+
+    nombre = re.search(r"^\s*-\s*name:\s*(\S+)\s*$", RENDER_FUENTE, re.M)
+    assert nombre, "`render.yaml` no declara el nombre del servicio"
+    dominio = f"{nombre.group(1)}.onrender.com"
+
+    enlaces = set(re.findall(r"[\w.-]+\.onrender\.com", readme))
+    assert enlaces, "el README no publica ningun enlace de la demo"
+    assert enlaces == {dominio}, (
+        f"el README apunta a {sorted(enlaces)} y el despliegue produce "
+        f"{dominio}: el enlace publicado no lleva a la demo"
+    )
+
+
 def test_render_fija_el_puerto_publico_y_no_es_el_del_motor():
     """El guardia mas importante de este fichero, y el que menos lo parece.
 

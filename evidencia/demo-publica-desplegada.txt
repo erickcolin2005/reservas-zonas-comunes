@@ -1,0 +1,70 @@
+La demo publica, desplegada y medida por internet
+======================================================================
+
+  https://reservas-zonas-comunes.onrender.com
+  Desplegada el 2026-08-15 a las 23:37 -05:00; medida justo despues, entre
+  las 23:45 y las 00:00 del 2026-08-16. La corrida cruza la medianoche y
+  se escribe asi en vez de elegir un dia.
+
+  Plan gratuito: 512 MB, 0.1 CPU, region Virginia. Desplegada desde
+  `render.yaml`, commit eaf3bec.
+
+  Es la primera vez que el sistema corre en un sitio publico. Todo lo
+  anterior fueron mediciones en una maquina; esto tiene red en medio.
+
+  P1  Esta viva, y sirve lo suyo
+      GET /salud     ->  200, {"estado":"vivo"}, 52 s en frio
+      GET /          ->  200, 17497 bytes (los mismos que en local)
+
+      Los 52 s en frio caen dentro de los 53-71 s medidos a 0.1 CPU en
+      `contenedor-en-una-decima-de-cpu.txt`, y coinciden con el propio
+      aviso de Render: *"can delay requests by 50 seconds or more"*.
+      Tres estimaciones independientes dicen lo mismo.
+
+  P2  El puerto publico es el del servidor, no el del motor
+      cabecera de la respuesta:
+        x-render-origin-server: BaseHTTP/0.6 Python/3.13.15
+
+      Es la prueba en produccion de que fijar PORT funciono. El primer
+      despliegue habia mostrado `Detected a new open port HTTP:8000`
+      -DynamoDB Local-, y enrutar ahi habria publicado la base de datos
+      en crudo, saltandose autorizador, contador y las quince reglas.
+
+  P3  El origen de CORS coincide con el dominio real
+        access-control-allow-origin: https://reservas-zonas-comunes.onrender.com
+
+      Comprobado contra la respuesta, no contra la configuracion. Si no
+      coincidieran, la pagina cargaria entera y no haria nada, sin un
+      solo error en pantalla.
+
+  P4  El instrumento, por internet, contra el sistema desplegado
+      espacio E-CAN · franja disputada 2026-08-16T10:00:00
+      identidades ....................... 50 de 50 pedidas
+      lanzadas .......................... 50
+      competidoras efectivas ............ 50
+      CONFIRMADAS ....................... 1
+      reparto: RR-10 29 · RR-11 20 · confirmada 1
+      S-1 max en vuelo a la vez ......... 50 de 50
+      dispersion de la barrera .......... 8.39 ms
+      ->  medicion VALIDA
+
+      Los RR-11 suben a 20, contra los 3-7 de la misma maquina en local.
+      La red reparte las llegadas distinto y mas solicitudes alcanzan la
+      condicion de escritura en vez de leer la franja ya ocupada. Mas
+      evidencia directa de carrera, no menos.
+
+======================================================================
+Lo que esto NO demuestra:
+
+  - NO dice nada sobre DynamoDB. Aqui corre el sustituto local, que
+    serializa mas que el motor real: no puede producir MENOS dobles
+    reservas que el, pero tampoco prueba nada sobre el. La afirmacion
+    central se apoya en `k-motor-real.txt`.
+
+  - NO es una prueba de carga. Son 50 solicitudes por una franja, que es
+    una medicion de correccion bajo concurrencia. Las tablas de carga y
+    latencia de §3.2 del README siguen vacias, y por eso estan ahi.
+
+  - NO promete que el enlace siga vivo. La instancia duerme a los 15
+    minutos, el plan tiene 750 horas al mes, y el entregable de este
+    proyecto nunca fue la URL: es el IaC y la evidencia.
