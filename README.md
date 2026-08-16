@@ -540,7 +540,7 @@ termina exigiendo que se corrija cada vez. Queda anotado.*
 | Qué | Hoy |
 |---|---|
 | Código | Núcleo puro, adaptadores, frontera HTTP, seguridad, instrumento e interfaz |
-| Pruebas | **405 en verde**, más tres suites de mutación que las ponen en rojo a propósito |
+| Pruebas | **406 en verde**, más tres suites de mutación que las ponen en rojo a propósito |
 | Integración continua | En verde en cada empujón, en una máquina que no es la mía |
 | Cuenta de AWS | Abierta. **En Plan de Pago y sin créditos**, contra lo que se había decidido (§6) |
 | Guardarraíl de costos | Desplegado **antes que ningún otro recurso**, y probado: deniega y nombra su causa |

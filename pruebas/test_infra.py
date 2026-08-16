@@ -205,6 +205,35 @@ def test_render_no_pone_la_llave_del_motor_real():
     assert "RESERVAS_MOTOR_REAL" not in RENDER_SIN_COMENTARIOS
 
 
+def test_el_origen_de_cors_es_la_url_que_el_propio_servicio_va_a_tener():
+    """Dos sitios que tienen que decir lo mismo, y nada los ata salvo esto.
+
+    El origen de CORS se escribe a mano y el dominio lo compone el alojamiento a
+    partir del nombre del servicio. **Renombrar el servicio cambia uno y no el
+    otro**, y el resultado es el fallo que menos se parece a su causa: la pagina
+    carga, se ve entera y no hace nada, sin un solo error en pantalla, porque el
+    navegador bloquea la llamada y el servidor ni se entera.
+
+    Si algun dia se pone un dominio propio, esta prueba tiene que cambiar — que
+    es exactamente lo que se quiere: que sea una decision y no un descuido.
+    """
+    nombre = re.search(r"^\s*-\s*name:\s*(\S+)\s*$", RENDER_FUENTE, re.M)
+    assert nombre, "`render.yaml` no declara el nombre del servicio"
+
+    origen = re.search(
+        r"^\s*-\s*key:\s*RESERVAS_ORIGEN_PERMITIDO\s*\n\s*value:\s*(\S+)\s*$",
+        RENDER_FUENTE,
+        re.M,
+    )
+    assert origen, "RESERVAS_ORIGEN_PERMITIDO no tiene valor literal"
+
+    esperado = f"https://{nombre.group(1)}.onrender.com"
+    assert origen.group(1) == esperado, (
+        f"el origen dice {origen.group(1)} y el servicio se llama "
+        f"{nombre.group(1)}, asi que su dominio es {esperado}"
+    )
+
+
 def test_render_fija_el_puerto_publico_y_no_es_el_del_motor():
     """El guardia mas importante de este fichero, y el que menos lo parece.
 

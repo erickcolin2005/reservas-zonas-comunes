@@ -117,20 +117,22 @@ services:
         generateValue: true
 
       # -------------------------------------------------------------------
-      # LA UNICA QUE HAY QUE PONER A MANO, Y NO ES UN DESCUIDO
+      # LA URL PUBLICA, Y POR QUE AHORA ES UN LITERAL
       # -------------------------------------------------------------------
-      # Tiene que ser la URL publica EXACTA que Render asigne a este servicio,
-      # con `https://` y SIN barra final. No se puede escribir aqui por
-      # adelantado: si el nombre del servicio ya existe en Render, la URL lleva
-      # un sufijo que nadie decide.
+      # Nacio como `sync: false` -declararla a mano en el panel- porque la URL
+      # no se puede saber antes de que el servicio exista: si el nombre esta
+      # tomado, Render le anade un sufijo que nadie decide.
       #
-      # `sync: false` obliga a declararla en el panel en vez de heredar un valor
-      # inventado. Se pone asi: despliega, lee la URL que aparece arriba en el
-      # servicio, ponla aqui y vuelve a desplegar.
+      # Ya existe, y es esta. Escribirla aqui es lo que hace cierto lo que §6 del
+      # README promete: que el sistema se levanta desde el repositorio y no desde
+      # una secuencia de clics que hay que recordar. Un despliegue con un hueco
+      # que rellenar a mano no se reconstruye solo, y este proyecto no puede
+      # afirmar lo contrario.
       #
-      # SI NO COINCIDE, EL FALLO NO SE PARECE A SU CAUSA: la pagina carga, se ve
-      # entera y no hace nada. No aparece ningun error, porque el navegador
-      # bloquea la llamada por CORS y el servidor ni se entera de que alguien lo
-      # intento.
+      # TIENE QUE COINCIDIR EXACTAMENTE con el dominio del servicio: `https://`,
+      # sin barra final. Si el servicio se renombra, esto cambia con el — y si no
+      # cambia, EL FALLO NO SE PARECE A SU CAUSA: la pagina carga, se ve entera y
+      # no hace nada, porque el navegador bloquea la llamada por CORS y el
+      # servidor ni se entera de que alguien lo intento.
       - key: RESERVAS_ORIGEN_PERMITIDO
-        sync: false
+        value: https://reservas-zonas-comunes.onrender.com
