@@ -433,6 +433,12 @@ coincide **exactamente** con el origen desde el que se sirve la página, la pág
 carga, se ve entera y no hace nada. No aparece ningún error: el navegador bloquea
 la llamada por CORS y el servidor ni se entera de que alguien lo intentó.
 
+**Y todo esto está ejecutado, no deducido.** El comando que documenta el
+`Dockerfile` nació sin correrlo y moría al arrancar; la corrida completa —imagen,
+contenedor sano, el instrumento contra él, y el negativo al que le falta una
+variable— está en
+[`evidencia/contenedor-comando-documentado.txt`](evidencia/contenedor-comando-documentado.txt).
+
 ---
 
 ## 7 · Lo que cuesta, y cómo se sabe que no va a costar más

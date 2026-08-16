@@ -1,0 +1,67 @@
+Comando documentado del contenedor — ejecutado, no razonado
+======================================================================
+
+  2026-08-14 · Docker Desktop 4.48.0, engine 28.5.1 · imagen
+  construida con el comando que el Dockerfile documenta, no con una
+  variante comoda.
+
+  POR QUE EXISTE ESTE FICHERO. La primera version de ese comentario
+  pasaba una sola variable y el contenedor moria al arrancar. Se
+  corrigio deduciendo cuales faltaban, y deducir no es ejecutar. Un
+  comando documentado se comprueba de la unica forma que vale:
+  ejecutandolo entero.
+
+  C1  Construccion
+      `docker build -t reservas .` reproduce el mismo image id que la
+      imagen previa (ec455286c61e). En esta corrida eso confirma que
+      la correccion fue de comentarios y no toco ninguna capa.
+
+  C2  Arranque con las ocho variables documentadas
+      contenedor sano en 9 s — healthcheck sobre /salud, que no toca
+      el motor: una sonda que leyera la tabla convertiria la
+      vigilancia en consumo.
+      GET /salud  ->  {"estado":"vivo"}
+      GET /       ->  HTTP 200, 17497 bytes
+
+  C3  El instrumento contra ese contenedor
+      espacio E-CAN · franja disputada 2026-08-16T10:00:00
+      identidades 50 de 50 pedidas · lanzadas 50
+      competidoras efectivas ....... 50
+      CONFIRMADAS .................. 1
+      reparto: RR-10 35 · RR-11 14 · confirmada 1
+      S-1 max en vuelo a la vez .... 50 de 50
+      dispersion de la barrera ..... 10.05 ms
+      ->  medicion VALIDA: una sola confirmacion sobre la franja
+          disputada, con 14 RR-11 como evidencia directa de carrera.
+
+  C4  El negativo, que es la mitad del control
+      Sin RESERVAS_ESPACIOS el contenedor NO arranca. Escribe
+      "falta RESERVAS_ESPACIOS. No hay valor por defecto: quien lo
+      fija lo declara en el README" y sale con CODIGO 1.
+
+      El codigo de salida no es un detalle: saliendo con 0, el
+      alojamiento veria un contenedor sano, no reintentaria nada, y
+      quedaria una demo publica que responde a todo con un error
+      cuya causa no se parece al sintoma.
+
+  C5  Suite y mutacion, con el motor levantado
+      392 pruebas en verde en 52 s
+      M4  PASA — las 14 reglas del nucleo puro estan vigiladas
+      M4S PASA — autorizador y contador estan vigilados
+
+======================================================================
+Lo que esto NO demuestra, y conviene no leerle de mas:
+
+  - NO es la medicion de D-P4-23. Esta corrida fue SIN limites de
+    memoria ni de CPU. La que sostiene que un alojamiento gratuito
+    basta es la de `-m 512m --cpus=1`, y esa conserva su salvedad:
+    Docker Desktop con una CPU rapida detras no es una vCPU
+    compartida de nube. Es evidencia, no prueba.
+
+  - NO dice nada sobre DynamoDB. Aqui corre el sustituto local, que
+    serializa mas que el motor real. La afirmacion central del
+    proyecto se apoya en `k-motor-real.txt`, nunca en esto.
+
+  - NO prueba el despliegue en Koyeb. Prueba que la imagen y el
+    comando funcionan en una maquina. Que el alojamiento los acepte
+    se comprueba desplegando, y hasta entonces no se afirma.

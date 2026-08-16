@@ -58,6 +58,11 @@
 # Y los 250 no son un numero elegido a ojo: el sistema comprueba al arrancar que
 # `identidades x tope <= capacidad del borde`, y el sembrado crea 50 unidades
 # activas. 50 x 5 = 250.
+#
+# **El comando de arriba esta ejecutado, no deducido.** Con este fichero ya se
+# cometio una vez el error de documentar un comando sin correrlo, asi que la
+# corrida entera —arranque, instrumento contra el contenedor, y el negativo sin
+# una variable— esta en `evidencia/contenedor-comando-documentado.txt`.
 
 # El motor sale de la MISMA imagen que usan el CI y las pruebas locales, no de
 # una descarga aparte.
