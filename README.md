@@ -552,9 +552,14 @@ Fuentes:
 
 ## 9 · Estado, sin adornos
 
-*Al 2026-08-14. Esta tabla decía «Código: Nada · Pruebas: Ninguna · Cuenta de
-AWS: Sin abrir» hasta hoy, y llevaba meses siendo falsa — en el mismo archivo que
-termina exigiendo que se corrija cada vez. Queda anotado.*
+*Al 2026-08-16. Esta tabla decía «Código: Nada · Pruebas: Ninguna · Cuenta de
+AWS: Sin abrir» hasta el 14 de agosto, y llevaba meses siendo falsa — en el mismo
+archivo que termina exigiendo que se corrija cada vez. Queda anotado.*
+
+*Y el mismo error, otra vez y más grande, corregido el 16: la corrección de arriba
+vivía en una rama. **Quien abriera este repositorio seguía leyendo «Código: Nada»**,
+porque `main` estaba diecisiete commits atrás. Arreglar el texto y dejarlo donde
+nadie lo lee es no haberlo arreglado.*
 
 | Qué | Hoy |
 |---|---|
