@@ -53,6 +53,33 @@ La demo publica, desplegada y medida por internet
       condicion de escritura en vez de leer la franja ya ocupada. Mas
       evidencia directa de carrera, no menos.
 
+  P5  Los parametros que la pagina interpola, leidos del servicio vivo
+      GET /espacios  ->  200
+
+      E-SAL  Salon social        9-23h  duracion 4-6h  cupo 1/mensual  antelacion 72h  horizonte 90d  cancelar 48h
+      E-BBQ  Zona BBQ           10-22h  duracion 3-4h  cupo 2/mensual  antelacion 24h  horizonte 30d  cancelar 12h
+      E-CAN  Cancha multiple     6-21h  duracion 1-2h  cupo 3/semanal  antelacion 2h  horizonte 7d  cancelar 2h
+
+      Esto es RF-01 comprobado en el sistema publico: los parametros estan
+      DISPONIBLES antes de intentar nada, y salen del servicio en vez de
+      estar escritos a mano en la pagina. Se copian aqui porque son los
+      que dan sentido a cualquier rechazo que alguien lea en la demo, y
+      **cuando el enlace muera esta tabla seguira explicandolos**.
+
+      GET /admin  ->  404. Las rutas no declaradas responden como una
+      inexistente, sin decir que existen y estan cerradas.
+
+  P6  La comprobacion que ninguna herramienta puede hacer
+      2026-08-16 · Erick abrio la demo en su navegador y confirmo que
+      funciona.
+
+      Se anota porque es la unica parte que no se puede automatizar: que
+      la pagina CARGUE y RESPONDA desde un navegador real depende de que
+      el origen de CORS coincida, y ese fallo no deja rastro en el
+      servidor -la peticion nunca llega-. Un 200 en `curl` no lo habria
+      demostrado nunca, porque CORS lo aplica el navegador y no el
+      servidor.
+
 ======================================================================
 Lo que esto NO demuestra:
 
