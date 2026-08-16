@@ -107,7 +107,21 @@ EXPOSE 8080
 
 # La sonda pega a /salud, que NO toca el motor: una sonda que leyera la tabla
 # cada pocos segundos convertiria la vigilancia en consumo.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+#
+# `--start-period` era 40s y **medido no alcanza**. La maquina de destino no es
+# esta: una instancia gratuita da **0.1 vCPU**, y ahi tres arranques en frio
+# tardaron **53, 71 y 58 segundos** en dar la primera respuesta, porque la JVM
+# del motor arranca con una decima de CPU. Con 40s el contenedor se declara
+# enfermo antes de terminar de nacer, y lo que se ve es "se reinicia solo": un
+# sintoma que no se parece nada a su causa.
+#
+# 180s no es holgura por si acaso. Es el peor arranque medido, mas margen por
+# que la CPU compartida de un alojamiento vaya mas lenta que este portatil.
+# Medicion en `evidencia/contenedor-en-una-decima-de-cpu.txt`.
+#
+# Y lo mismo hay que hacer en el alojamiento: su comprobacion de salud tiene su
+# propio periodo de gracia, y el de por defecto suele ser mas corto que esto.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${PORT}/salud" || exit 1
 
 CMD ["./arranque.sh"]

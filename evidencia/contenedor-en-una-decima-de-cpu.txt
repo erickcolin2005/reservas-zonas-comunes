@@ -1,0 +1,68 @@
+El contenedor en una decima de CPU — la maquina de destino
+======================================================================
+
+  2026-08-15 · `-m 512m --cpus=0.1` · Docker Desktop 4.48.0
+
+  POR QUE 0.1 Y NO 1. La demo publica va a un alojamiento gratuito, y la
+  instancia gratuita del candidato (Koyeb) es **512 MB y 0.1 vCPU**, segun
+  su propia documentacion de precios e instancias. La medicion anterior se
+  hizo con `--cpus=1`: era **diez veces** la maquina real. Un numero medido
+  sobre la maquina equivocada no es un dato mas flojo, es otro dato.
+
+  AVISO DE VIGENCIA. Que la cuenta tenga ese plan **no esta confirmado**: el
+  plan gratuito se cerro a usuarios nuevos tras la compra por Mistral, y la
+  cuenta es posterior al anuncio. Si el alojamiento cambia, lo que sigue vale
+  igual -describe una maquina de 0.1 vCPU, no una marca-.
+
+  D1  Arranque en frio, tres veces
+      53 s · 71 s · 58 s  hasta la primera respuesta de /salud.
+
+      Es la JVM del motor arrancando con una decima de CPU. De aqui sale el
+      `--start-period=180s` del Dockerfile: el peor arranque medido mas
+      margen. Con los 40s que habia antes, el contenedor se declara enfermo
+      antes de terminar de nacer y entra en bucle de reinicios.
+
+      **Esto es lo que mas facilmente tumba un primer despliegue**, y su
+      sintoma -"se reinicia solo"- no se parece a su causa.
+
+  D2  El instrumento, tres corridas en franjas distintas
+      hora 11 ->  50 en vuelo de 50 · 50 competidoras · 1 CONFIRMADA ·  3 RR-11
+      hora 12 ->  50 en vuelo de 50 · 50 competidoras · 1 CONFIRMADA ·  6 RR-11
+      hora 13 ->  50 en vuelo de 50 · 50 competidoras · 1 CONFIRMADA ·  7 RR-11
+      las tres VALIDAS
+
+      Una decima de CPU sirve. La conclusion de la medicion anterior
+      sobrevive; la evidencia que la sostenia, no: hubo que rehacerla.
+
+  D3  Lo que cambia al bajar la CPU, y no es el veredicto
+      Los RR-11 caen de 12-16 (a 1 vCPU) a 3-7. Con menos CPU las solicitudes
+      se serializan mas y pierden por LECTURA (RR-10) en vez de por condicion
+      de escritura (RR-11). Sigue habiendo carrera directa observada, que es
+      lo que el criterio exige, pero con menos margen: **una maquina aun mas
+      lenta podria dejar los RR-11 en cero, y entonces el instrumento
+      declararia la medicion invalida** -correctamente-.
+
+  D4  La corrida que salio mal, que tambien se publica
+      La primera de todas, lanzada nada mas arrancar el contenedor:
+      50 lanzadas · **48 competidoras efectivas** · 1 CONFIRMADA · 16 RR-11
+      · 2 "otro" (fallos de transporte con el arranque todavia apretando).
+
+      48 esta POR DEBAJO del umbral de 50 que fija D-P4-08. No se promedia
+      con las buenas ni se descarta: se cuenta. Y deja una regla de uso: el
+      instrumento no se lanza contra un contenedor recien arrancado.
+
+======================================================================
+Lo que esto NO demuestra:
+
+  - `--cpus=0.1` es una CUOTA sobre una CPU rapida, no un nucleo lento
+    compartido con desconocidos. Se parece mas a la instancia real que
+    `--cpus=1`, pero no es ella. Es evidencia, no prueba.
+
+  - NO dice nada sobre DynamoDB: aqui corre el sustituto local, que
+    serializa mas que el motor real. La afirmacion central del proyecto se
+    apoya en `k-motor-real.txt`.
+
+  - NO mide el despertar tras dormir. La instancia gratuita escala a cero
+    tras 1 hora sin trafico y no se puede desactivar. Si al despertar el
+    contenedor arranca de nuevo, se pagan estos 53-71 s; si se reanuda desde
+    una instantanea de la VM, no. **No se sabe, y se observa desplegando.**
