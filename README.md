@@ -361,7 +361,7 @@ Así que se parte en dos, y el corte va donde está el riesgo:
 
 | | Dónde | Por qué |
 |---|---|---|
-| **La demo que se enlaza** | Fuera de AWS, en un servidor propio | Es lo que queda vivo y desatendido. Ahí el peor caso es perder la demo, no recibir una factura |
+| **La demo que se enlaza** | Fuera de AWS, en el nivel gratuito de un alojamiento de contenedores — declarado en [`render.yaml`](render.yaml) | Es lo que queda vivo y desatendido. Ahí el peor caso es perder la demo, no recibir una factura |
 | **El despliegue en AWS** | En la cuenta, en una ventana **corta y supervisada** | Es donde se captura la evidencia grabada y donde se prueba el freno. Con el instrumento en mis manos, no en las de un desconocido en bucle |
 
 **Lo que se pierde diciéndolo:** la demo que puedes tocar no corre sobre
@@ -373,6 +373,14 @@ y se ejecuta con un comando.
 Que el mismo código corra en los dos sitios sin tocar el núcleo no es casualidad:
 es lo que compra la frontera de `reservas/adaptadores/`, y es la única parte de
 este README que la justifica de verdad.
+
+**Y lo que vas a notar al abrir el enlace, dicho antes de que lo notes:** la
+máquina gratuita son 512 MB y **0,1 de CPU**, y duerme cuando nadie la usa.
+Arrancar el motor con una décima de CPU tarda entre **53 y 71 segundos** —está
+medido, en [`evidencia/contenedor-en-una-decima-de-cpu.txt`](evidencia/contenedor-en-una-decima-de-cpu.txt)—,
+así que es probable que esperes cerca de un minuto. No es el sistema siendo
+lento: es una máquina de cero euros despertándose. Con el sistema ya en pie, las
+cincuenta simultáneas salen igual, y esa misma medición lo enseña.
 
 ---
 
@@ -532,13 +540,13 @@ termina exigiendo que se corrija cada vez. Queda anotado.*
 | Qué | Hoy |
 |---|---|
 | Código | Núcleo puro, adaptadores, frontera HTTP, seguridad, instrumento e interfaz |
-| Pruebas | **392 en verde**, más tres suites de mutación que las ponen en rojo a propósito |
+| Pruebas | **404 en verde**, más tres suites de mutación que las ponen en rojo a propósito |
 | Integración continua | En verde en cada empujón, en una máquina que no es la mía |
 | Cuenta de AWS | Abierta. **En Plan de Pago y sin créditos**, contra lo que se había decidido (§6) |
 | Guardarraíl de costos | Desplegado **antes que ningún otro recurso**, y probado: deniega y nombra su causa |
 | Motor real | La tabla existe y el mecanismo está verificado contra ella |
 | Despliegue del borde | **Escrito y sin ejecutar.** El IaC está en `infra/`, el procedimiento también |
-| Demo | No existe todavía. Cuando exista, irá fuera de AWS y con su caducidad declarada (§6.1) |
+| Demo | No existe todavía. El despliegue está **declarado** en `render.yaml` y sin ejecutar; irá fuera de AWS y con su caducidad declarada (§6.1) |
 | Evidencia visual grabada | **Pendiente, y es lo único irreversible**: si la cuenta muere sin ella, no se recupera |
 | Tablas de §3 | Con las cifras de concurrencia dentro. **Las de carga y latencia siguen en blanco**, y por eso están ahí |
 

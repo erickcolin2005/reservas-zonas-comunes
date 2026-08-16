@@ -1,0 +1,114 @@
+# La demo publica, declarada. No son clics en un panel.
+#
+# Un despliegue que solo existe como una secuencia de clics no se puede revisar,
+# no se puede repetir y no se puede contar en un README. Este fichero es la
+# version pequena de lo que `infra/` hace en AWS, y esta aqui por la misma razon.
+#
+# POR QUE FUERA DE AWS. La razon esta en §6.1 del README y es economica: el
+# instrumento es una superficie de consumo abierta y anunciada a desconocidos, y
+# con la cuenta de AWS en Plan de Pago y cero creditos, dejarla viva y
+# desatendida alli es el riesgo que este proyecto describio como no acotable con
+# codigo. AWS se usa en ventanas cortas y supervisadas, no permanentemente.
+#
+# ---------------------------------------------------------------------------
+# LA MAQUINA, Y QUE SE MIDIO SOBRE ELLA
+# ---------------------------------------------------------------------------
+# El plan gratuito da 512 MB y 0.1 CPU. Esa forma exacta esta medida en
+# `evidencia/contenedor-en-una-decima-de-cpu.txt`, no supuesta:
+#
+#   - el instrumento alcanza sus 50 simultaneas: tres corridas, 50 competidoras
+#     efectivas, 1 confirmada, y 3/6/7 RR-11. Las tres validas.
+#   - los RR-11 caen de 12-16 (a 1 CPU) a 3-7. Sigue habiendo carrera directa
+#     observada, que es lo que el criterio exige, pero con menos margen.
+#   - el arranque en frio tarda 53-71 s, porque la JVM del motor arranca con una
+#     decima de CPU.
+#
+# ---------------------------------------------------------------------------
+# LO QUE HAY QUE SABER ANTES DE ABRIR EL ENLACE
+# ---------------------------------------------------------------------------
+# El plan gratuito DUERME a los 15 minutos sin trafico. Sumado al arranque de
+# arriba, casi todo visitante llega en frio y espera cerca de un minuto. Se
+# asume y se declara: es el precio de que la demo no cueste dinero, y el
+# entregable de este proyecto nunca fue el enlace -es el IaC y la evidencia-.
+#
+# Tiene una contrapartida real: el motor va en memoria y `arranque.sh` resiembra
+# en cada arranque, asi que dormir devuelve la demo a su estado limpio. Sin eso,
+# el segundo visitante encontraria la franja ya reservada por el primero.
+
+services:
+  - name: reservas-zonas-comunes
+    type: web
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+
+    # Virginia es la region mas cercana de las que ofrece el plan gratuito
+    # (oregon, ohio, virginia, frankfurt, singapore), y coincide con la costa
+    # este donde vive la cuenta de AWS.
+    region: virginia
+
+    # La rama donde vive I-6. Cambiar esto cuando se fusione a main.
+    branch: i6-frontera-http
+
+    # /salud NO toca el motor. Una sonda que leyera la tabla cada pocos segundos
+    # convertiria la vigilancia en consumo, y ademas impediria que la instancia
+    # llegara a dormir nunca.
+    healthCheckPath: /salud
+
+    autoDeployTrigger: commit
+
+    # -----------------------------------------------------------------------
+    # LAS OCHO. Ninguna tiene valor por defecto en el codigo, a proposito: un
+    # despliegue con una variable mal puesta arrancaria con un valor de
+    # demostracion y PARECERIA configurado. Estan explicadas una a una en §6.2
+    # del README.
+    # -----------------------------------------------------------------------
+    envVars:
+      - key: RESERVAS_ESPACIOS
+        value: E-SAL,E-BBQ,E-CAN
+
+      - key: RESERVAS_VENTANA_SEGUNDOS
+        value: "300"
+
+      - key: RESERVAS_TOPE_POR_IDENTIDAD
+        value: "5"
+
+      - key: RESERVAS_TOPE_POR_ORIGEN
+        value: "20"
+
+      # 250 no es un numero elegido a ojo: el sistema comprueba AL ARRANCAR que
+      # `identidades x tope <= capacidad del borde`, y el sembrado crea 50
+      # unidades activas. 50 x 5 = 250. Si no se cumple, no arranca — porque el
+      # borde rechazaria antes que el contador y la medicion se invalidaria sin
+      # que nadie hubiera tocado el contador.
+      - key: RESERVAS_CAPACIDAD_DEL_BORDE
+        value: "250"
+
+      # D-CE4-1: enfriamiento entre ejecuciones del instrumento, en el borde y
+      # no en el cliente, porque un tope en el cliente lo quita quien quiera.
+      - key: RESERVAS_ENFRIAMIENTO_SEGUNDOS
+        value: "20"
+
+      # Generada por Render, distinta en cada servicio y nunca en el
+      # repositorio. Firma las credenciales que presta el dispensador.
+      - key: RESERVAS_CLAVE_FIRMA
+        generateValue: true
+
+      # -------------------------------------------------------------------
+      # LA UNICA QUE HAY QUE PONER A MANO, Y NO ES UN DESCUIDO
+      # -------------------------------------------------------------------
+      # Tiene que ser la URL publica EXACTA que Render asigne a este servicio,
+      # con `https://` y SIN barra final. No se puede escribir aqui por
+      # adelantado: si el nombre del servicio ya existe en Render, la URL lleva
+      # un sufijo que nadie decide.
+      #
+      # `sync: false` obliga a declararla en el panel en vez de heredar un valor
+      # inventado. Se pone asi: despliega, lee la URL que aparece arriba en el
+      # servicio, ponla aqui y vuelve a desplegar.
+      #
+      # SI NO COINCIDE, EL FALLO NO SE PARECE A SU CAUSA: la pagina carga, se ve
+      # entera y no hace nada. No aparece ningun error, porque el navegador
+      # bloquea la llamada por CORS y el servidor ni se entera de que alguien lo
+      # intento.
+      - key: RESERVAS_ORIGEN_PERMITIDO
+        sync: false

@@ -51,6 +51,24 @@ ENTRADA = (
     pathlib.Path(__file__).resolve().parent.parent / "reservas" / "entrada.py"
 )
 
+RENDER = pathlib.Path(__file__).resolve().parent.parent / "render.yaml"
+RENDER_FUENTE = RENDER.read_text(encoding="utf-8")
+RENDER_SIN_COMENTARIOS = "\n".join(
+    linea
+    for linea in RENDER_FUENTE.splitlines()
+    if not linea.lstrip().startswith("#")
+)
+
+SERVIDOR = (
+    pathlib.Path(__file__).resolve().parent.parent / "herramientas" / "servidor.py"
+)
+
+# La unica que el contenedor NO saca del entorno: `servidor.py --sembrar` la
+# compone con las unidades que acaba de sembrar. En Lambda no hay sembrador y por
+# eso la plantilla de AWS si la declara. La diferencia es real y esta vigilada
+# por su propia prueba, para que no se lea como un olvido.
+DEL_SEMBRADOR = {"RESERVAS_UNIDADES_ACTIVAS"}
+
 
 def rutas_de_la_plantilla() -> set:
     return {
@@ -131,6 +149,76 @@ def test_la_plantilla_no_pone_la_llave_del_motor_real():
 # ---------------------------------------------------------------------------
 # SEC-6 · el comodin, rechazado donde manda
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# La demo publica: la misma costura, en el otro despliegue
+# ---------------------------------------------------------------------------
+#
+# `render.yaml` levanta el contenedor de la demo publica. Es un despliegue
+# distinto del de AWS y tiene los mismos modos de fallo silencioso, asi que lleva
+# los mismos guardias. Se comprueba con expresiones regulares por la misma razon
+# que la plantilla de arriba: no se anade PyYAML para leer cuatro claves.
+
+
+@pytest.mark.parametrize(
+    "variable", sorted(variables_que_el_codigo_exige() - DEL_SEMBRADOR)
+)
+def test_render_declara_toda_variable_que_el_codigo_exige(variable):
+    """Si falta una, el contenedor **no arranca** — y en un alojamiento eso se ve
+    como reinicios en bucle, que no se parece a su causa."""
+    assert re.search(rf"^\s*-\s*key:\s*{variable}\s*$", RENDER_FUENTE, re.M), (
+        f"{variable} la exige el codigo y `render.yaml` no la declara"
+    )
+
+
+def test_render_no_declara_las_unidades_activas():
+    """Y esta al reves, porque declararla romperia algo que hoy funciona.
+
+    En el contenedor las unidades las compone `--sembrar` con lo que acaba de
+    sembrar. Ponerla en `render.yaml` la fijaria a mano, y el dia que el sembrado
+    cambiara de tamano **la desigualdad de SEC-1 se comprobaria contra un numero
+    que ya no es el real**.
+    """
+    for variable in DEL_SEMBRADOR:
+        assert f"key: {variable}" not in RENDER_SIN_COMENTARIOS, (
+            f"{variable} la pone el sembrador, no el entorno"
+        )
+
+
+def test_render_se_queda_en_el_plan_gratuito():
+    """El guardia economico de este despliegue, y es todo el que hay.
+
+    Aqui no existe nada parecido al guardarrail de AWS: un `plan:` distinto de
+    `free` empieza a cobrar sin avisar a nadie. Cambiarlo tiene que costar tocar
+    esta prueba, que es la diferencia entre una decision y un descuido.
+    """
+    assert re.search(r"^\s*plan:\s*free\s*$", RENDER_FUENTE, re.M), (
+        "el plan dejo de ser `free`: esto ya cuesta dinero"
+    )
+
+
+def test_render_no_pone_la_llave_del_motor_real():
+    """D-P4-19, y aqui es mas grave que en AWS: `servidor.py` **se niega a
+    arrancar** si la encuentra, porque es un servidor de demostracion y no debe
+    hablar con el motor real. Ponerla aqui dejaria la demo muerta."""
+    assert "RESERVAS_MOTOR_REAL" not in RENDER_SIN_COMENTARIOS
+
+
+def test_el_health_check_apunta_a_una_ruta_que_el_servidor_sirve():
+    """La costura que nadie revisa hasta que el despliegue no levanta.
+
+    Si la ruta del health check y la que sirve el servidor dejan de coincidir, el
+    alojamiento declara el servicio enfermo y lo reinicia para siempre. El
+    sintoma es «se reinicia solo» y la causa es una cadena de texto.
+    """
+    declarada = re.search(r"^\s*healthCheckPath:\s*(\S+)\s*$", RENDER_FUENTE, re.M)
+    assert declarada, "`render.yaml` no declara healthCheckPath"
+    ruta = declarada.group(1)
+    fuente = SERVIDOR.read_text(encoding="utf-8")
+    assert f'camino == "{ruta}"' in fuente, (
+        f"el health check apunta a {ruta} y `servidor.py` no la sirve"
+    )
 
 
 def patron_del_origen() -> str:
