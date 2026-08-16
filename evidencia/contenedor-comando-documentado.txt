@@ -1,7 +1,7 @@
 Comando documentado del contenedor — ejecutado, no razonado
 ======================================================================
 
-  2026-08-14 · Docker Desktop 4.48.0, engine 28.5.1 · imagen
+  2026-08-15 · Docker Desktop 4.48.0, engine 28.5.1 · imagen
   construida con el comando que el Dockerfile documenta, no con una
   variante comoda.
 
