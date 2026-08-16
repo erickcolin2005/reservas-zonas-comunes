@@ -47,8 +47,19 @@ services:
     # este donde vive la cuenta de AWS.
     region: virginia
 
-    # La rama donde vive I-6. Cambiar esto cuando se fusione a main.
-    branch: i6-frontera-http
+    # La demo sale de la rama principal, que es la que el mundo lee.
+    #
+    # Nacio apuntando a `i6-frontera-http` porque el trabajo vivia ahi. Mientras
+    # duro eso, el repositorio publico tenia un problema mas grande que la rama:
+    # quien abriera `main` leia un README que decia "Codigo: Nada · Pruebas:
+    # Ninguna", sin Dockerfile ni frontend. **El artefacto mas leido era el mas
+    # falso**, que es el fallo que este proyecto entero persigue, cometido a
+    # escala de repositorio.
+    #
+    # Y el orden en que se arregla no es indiferente: primero `main` recibe todo,
+    # despues se repunta esto. Al reves, el alojamiento intentaria construir un
+    # `main` sin `Dockerfile` y tumbaria la demo que ya funcionaba.
+    branch: main
 
     # /salud NO toca el motor. Una sonda que leyera la tabla cada pocos segundos
     # convertiria la vigilancia en consumo, y ademas impediria que la instancia
